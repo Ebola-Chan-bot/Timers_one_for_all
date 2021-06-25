@@ -11,7 +11,8 @@
 			"defines": [
 				"USBCON",
 				"__AVR_ATmega2560__",
-				"F_CPU=16000000"
+				"F_CPU=16000000",
+				"ARDUINO_ARCH_AVR"
 			],
 			//支持__attribute__，不能用msvc
 			"intelliSenseMode": "gcc-x64",
