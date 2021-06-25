@@ -1,0 +1,7 @@
+{
+	"files.associations": {
+		"WIRING.C": "cpp",
+		"WIRING_ANALOG.C": "cpp",
+		"MEM.C": "cpp"
+	}
+}
