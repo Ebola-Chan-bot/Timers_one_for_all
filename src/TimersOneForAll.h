@@ -3,10 +3,12 @@
 #error 仅支持AVR架构
 #endif
 #include <Arduino.h>
+//Give the timer you want to use as the first template argument. One timer can undertake one task only at the same time. If you assign a new task on a timer, it will abort the task assigned before.
 namespace TimersOneForAll
 {
+	//Get milliseconds elapsed after the last call of StartTiming.
 	template <uint8_t TimerCode>
-	static uint16_t MillisecondsElapsed;
+	static volatile uint16_t MillisecondsElapsed;
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
 	void DoAfter();
 	namespace Internal
@@ -748,30 +750,35 @@ namespace TimersOneForAll
 	}
 #pragma endregion
 #pragma region 公开API
+	//Call your function with a timer interrupt after given milliseconds
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
 	void DoAfter()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, AfterMilliseconds);
 		Internal::InternalDA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask>();
 	}
+	//Repetitively and infinitely call your function with a timer interrupt for each given milliseconds. The first interrupt happens after your milliseconds, too.
 	template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)()>
 	void RepeatAfter()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, IntervalMilliseconds);
 		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask>();
 	}
+	//Repeat for only given times
 	template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), uint32_t RepeatTimes>
 	void RepeatAfter()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, IntervalMilliseconds);
 		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask, RepeatTimes>();
 	}
+	//Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
 	template <uint8_t TimerCode>
 	void StartTiming()
 	{
 		MillisecondsElapsed<TimerCode> = 0;
 		RepeatAfter<TimerCode, 1, Internal::MEAdd<TimerCode>>();
 	}
+	//Play a tone of given frequency on given pin endlessly.
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz>
 	void PlayTone()
 	{
@@ -779,7 +786,7 @@ namespace TimersOneForAll
 		Internal::EfficientDigitalToggle<PinCode>();
 		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>>();
 	}
-	//在指定引脚上生成指定频率的方波，持续指定的毫秒数
+	//Play for only given milliseconds
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, uint16_t Milliseconds>
 	void PlayTone()
 	{
@@ -787,16 +794,19 @@ namespace TimersOneForAll
 		Internal::EfficientDigitalToggle<PinCode>();
 		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>, uint32_t(FrequencyHz) * Milliseconds / 500>();
 	}
+	//Generate an infinite sequence of square wave. The high level and low level can have different time length.
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
 	void SquareWave()
 	{
 		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds>();
 	}
+	//Generate the square wave for only given cycles.
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes>
 	void SquareWave()
 	{
 		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, RepeatTimes>();
 	}
+	//Abort all tasks assigned above.
 	template <uint8_t TimerCode>
 	void ShutDown()
 	{
