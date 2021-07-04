@@ -26,7 +26,7 @@ Currently all APIs are function templates, which means all arguments must be kno
 # Timers
 All public APIs are under namespace TimersOneForAll, and require TimerCode as the first template argument. TimerCode indicates which hardware timer you want to use. Hardware timers vary by CPUs. For ATMega2560, there're 6 timers:
 ## Timer 0
-This timer is 8-bit, which means it has 2^8=256 states. It can generate COMPA and COMPB interrupts, but not OVF, because it's occupied by Arduino builtin function `millis()`. This means this timer is the last one you want to use among all the timers. Only use it if you really have strong reasons.
+This timer is 8-bit, which means it has 2^8=256 states. It can generate COMPA and COMPB interrupts, but not OVF, because it's occupied by Arduino builtin function `millis();delay();micros();`. This means this timer is the last one you want to use among all the timers. Only use it if you really have strong reasons.
 ## Timer 1, 3, 4, 5
 These timers are all 16-bit, with 65536 states, which means that they're more accurate than 8-bit timers. COMPA, COMPB and OVF interrupts are all available. You may want to use these timers for most scenarios.
 ## Timer 2
@@ -76,6 +76,10 @@ void SquareWave()
 //Generate the square wave for only RepeatTimes cycles.
 template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes>
 void SquareWave()
+//阻塞当前代码执行指定毫秒数
+//Block current code from running for DelayMilliseconds
+template <uint8_t TimerCode, uint16_t DelayMilliseconds>
+void Delay()
 //取消指定给特定计时器的所有任务。其它计时器不受影响。
 //Abort all tasks assigned to TimerCode. Other timers won't be affected.
 template <uint8_t TimerCode>

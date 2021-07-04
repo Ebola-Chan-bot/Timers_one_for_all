@@ -3,10 +3,10 @@
 #error 仅支持AVR架构
 #endif
 #include <Arduino.h>
-//Give the timer you want to use as the first template argument. One timer can undertake one task only at the same time. If you assign a new task on a timer, it will abort the task assigned before.
+//一个计时器只能同时执行一个任务。如果先布置的任务尚未完成，将会被后布置的任务覆盖掉。
 namespace TimersOneForAll
 {
-	//Get milliseconds elapsed after the last call of StartTiming.
+	//取得上次调用StartTiming以来经过的毫秒数
 	template <uint8_t TimerCode>
 	static volatile uint16_t MillisecondsElapsed;
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
@@ -153,140 +153,9 @@ namespace TimersOneForAll
 		template <uint8_t TimerCode>
 		volatile static uint32_t SR;
 		template <uint8_t TimerCode>
-		volatile static uint32_t LR;
+		volatile static int32_t LR;
 #pragma endregion
 #pragma region 内部功能实现核心
-		template <uint8_t TimerCode, void (*DoTask)()>
-		void CompaDLarge()
-		{
-			if (!--LR<TimerCode>)
-			{
-				TIMSK<TimerCode> = 0;
-				DoTask();
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t TCNTLarge>
-		void CompaDSmall()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SetOCRA<TimerCode>(TCNTLarge);
-				COMPA<TimerCode> = CompaDLarge<TimerCode, DoTask>;
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRLarge();
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRSmall()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SR<TimerCode> = LargeRepeats;
-				if (TCNTLarge < TimerMax[TimerCode])
-				{
-					SetOCRA<TimerCode>(TCNTLarge);
-					COMPA<TimerCode> = CompaRLarge<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-				}
-				else
-					TIMSK<TimerCode> = 1;
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRLarge()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SR<TimerCode> = SmallRepeats;
-				if (TCNTLarge < TimerMax[TimerCode])
-				{
-					SetOCRA<TimerCode>(TCNTSmall);
-					COMPA<TimerCode> = CompaRSmall<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-				}
-				else
-					TIMSK<TimerCode> = 2;
-				DoTask();
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SelfRepeats>
-		void CompaRSelf()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SR<TimerCode> = SelfRepeats;
-				DoTask();
-			}
-		}
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRLargeT();
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRSmallT()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SR<TimerCode> = LargeRepeats;
-				if (TCNTLarge < TimerMax[TimerCode])
-				{
-					SetOCRA<TimerCode>(TCNTLarge);
-					COMPA<TimerCode> = CompaRLargeT<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-				}
-				else
-					TIMSK<TimerCode> = 1;
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t LargeRepeats, uint16_t TCNTLarge, uint16_t SmallRepeats, uint16_t TCNTSmall>
-		void CompaRLargeT()
-		{
-			if (!--SR<TimerCode>)
-			{
-				if (--LR<TimerCode>)
-				{
-					SR<TimerCode> = SmallRepeats;
-					if (TCNTLarge < TimerMax[TimerCode])
-					{
-						SetOCRA<TimerCode>(TCNTSmall);
-						COMPA<TimerCode> = CompaRSmallT<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-					}
-					else
-						TIMSK<TimerCode> = 2;
-				}
-				else
-					TIMSK<TimerCode> = 0;
-				DoTask();
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SelfRepeats>
-		void CompaRSelfRepeat()
-		{
-			if (!--SR<TimerCode>)
-			{
-				if (--LR<TimerCode>)
-					SR<TimerCode> = SelfRepeats;
-				else
-					TIMSK<TimerCode> = 0;
-				DoTask();
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint32_t IdealRepeats>
-		void OvfR()
-		{
-			if (!--SR<TimerCode>)
-			{
-				SR<TimerCode> = IdealRepeats;
-				DoTask();
-			}
-		};
-		template <uint8_t TimerCode, void (*DoTask)(), uint32_t IdealRepeats>
-		void OvfRT()
-		{
-			if (!--SR<TimerCode>)
-			{
-				if (--LR<TimerCode>)
-					SR<TimerCode> = IdealRepeats;
-				else
-					TIMSK<TimerCode> = 0;
-				DoTask();
-			}
-		};
 		template <uint8_t PinCode>
 		void EfficientDigitalToggle()
 		{
@@ -318,256 +187,108 @@ namespace TimersOneForAll
 			if (!--LR<TimerCode>)
 				TIMSK<TimerCode> = 0;
 		}
-		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)()>
-		void InternalDA()
+		//Compa0表示自我重复，不切换
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SmallRepeats, bool InfiniteLr>
+		void Compa0()
 		{
-			constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
-			if (TCNT)
+			if (!--SR<TimerCode>)
+			{
+				if (InfiniteLr || --LR<TimerCode>)
+					SR<TimerCode> = SmallRepeats;
+				else
+					TIMSK<TimerCode> = 0;
+				DoTask();
+			}
+		}
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		void Compa2();
+		//Compa1是小重复，结束后要切换到大重复，但是大重复有可能是COMPA也可能是OVF
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		void Compa1()
+		{
+			if (!--SR<TimerCode>)
+			{
+				if (Tcnt2 < TimerMax[TimerCode])
+				{
+					SetOCRA<TimerCode>(Tcnt2);
+					COMPA<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr>;
+				}
+				else
+					TIMSK<TimerCode> = 1;
+				SR<TimerCode> = SR2;
+			}
+		}
+		//Compa2是大重复，结束后要执行动作，如果有重复次数还要切换到小重复
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		void Compa2()
+		{
+			if (!--SR<TimerCode>)
+			{
+				if (InfiniteLr || --LR<TimerCode>)
+				{
+					if (Tcnt2 < TimerMax[TimerCode])
+					{
+						SetOCRA<TimerCode>(Tcnt1);
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr>;
+					}
+					else
+						TIMSK<TimerCode> = 2;
+					SR<TimerCode> = SR1;
+				}
+				else
+					TIMSK<TimerCode> = 0;
+				DoTask();
+			}
+		}
+		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)(), int32_t RepeatTimes = -1>
+		void SLRepeaterSet()
+		{
+			TIMSK<TimerCode> = 0;
+			if (RepeatTimes != 0)
 			{
 				constexpr uint32_t TM = TimerMax[TimerCode];
-				TIMSK<TimerCode> = 0;
+				constexpr uint16_t IdealRepeats = TCNT / (TM - (TimerCode == 0));
+				constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
 				if (Timer02)
 					TCCRB<TimerCode> = PrescalerBits;
 				else
 					TCCRA<TimerCode> = 0;
-				//拒绝外部振荡源
-				bitWrite(ASSR, AS2, false);
-				if (TCNT < TM)
-				{
-					if (Timer02)
-						TCCRA<TimerCode> = 0;
-					else
-						TCCRB<TimerCode> = PrescalerBits;
-					SetOCRA<TimerCode>(TCNT);
-					COMPA<TimerCode> = []
-					{
-						TIMSK<TimerCode> = 0;
-						DoTask();
-					};
-					SetTCNT<TimerCode>(0);
-					TIMSK<TimerCode> = 2;
-				}
-				else
-				{
-					constexpr uint16_t IdealRepeats = TCNT / (TM - (TimerCode == 0));
-					if (IdealRepeats * TM < TCNT || TimerCode == 0) //Timer0的OVF不可用
-					{
-						constexpr uint16_t ActualRepeats = IdealRepeats + 1;
-						constexpr uint16_t TCNTSmall = TCNT / ActualRepeats;
-						constexpr uint16_t TCNTLarge = TCNTSmall + 1;
-						constexpr uint16_t SmallRepeats = ActualRepeats * TCNTLarge - TCNT;
-						constexpr uint16_t LargeRepeats = TCNT - ActualRepeats * TCNTSmall;
-						if (Timer02)
-							TCCRA<TimerCode> = 2;
-						else
-							TCCRB<TimerCode> = PrescalerBits + 8;
-						if (SmallRepeats)
-						{
-							SetOCRA<TimerCode>(TCNTSmall);
-							if (LargeRepeats)
-							{
-								SR<TimerCode> = SmallRepeats;
-								LR<TimerCode> = LargeRepeats;
-								COMPA<TimerCode> = CompaDSmall<TimerCode, DoTask, TCNTLarge>;
-							}
-							else
-							{
-								//大重复为0，小重复晋级为大重复
-								LR<TimerCode> = SmallRepeats;
-								COMPA<TimerCode> = CompaDLarge<TimerCode, DoTask>;
-							}
-						}
-						else
-						{
-							//小重复为0，大重复必不为0，直接开始
-							SetOCRA<TimerCode>(TCNTLarge);
-							LR<TimerCode> = LargeRepeats;
-							COMPA<TimerCode> = CompaDLarge<TimerCode, DoTask>;
-						}
-						SetTCNT<TimerCode>(0);
-						TIMSK<TimerCode> = 2;
-					}
-					else
-					{
-						SR<TimerCode> = IdealRepeats;
-						OVF<TimerCode> = []
-						{
-							if (!--SR<TimerCode>)
-							{
-								TIMSK<TimerCode> = 0;
-								DoTask();
-							}
-						};
-						if (Timer02)
-							TCCRA<TimerCode> = 0;
-						else
-							TCCRB<TimerCode> = PrescalerBits;
-						SetTCNT<TimerCode>(0);
-						TIMSK<TimerCode> = 1;
-					}
-				}
-			}
-			else
-				DoTask();
-		}
-		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)()>
-		void InternalRA()
-		{
-			constexpr uint32_t TM = TimerMax[TimerCode];
-			TIMSK<TimerCode> = 0;
-			constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
-			if (Timer02)
-				TCCRB<TimerCode> = PrescalerBits;
-			else
-				TCCRA<TimerCode> = 0;
-			//拒绝外部振荡源
-			bitWrite(ASSR, AS2, false);
-			if (TCNT < TM)
-			{
-				if (Timer02)
-					TCCRA<TimerCode> = 2;
-				else
-					TCCRB<TimerCode> = PrescalerBits + 8;
-				SetOCRA<TimerCode>(TCNT);
-				COMPA<TimerCode> = DoTask;
-				SetTCNT<TimerCode>(0);
-				TIMSK<TimerCode> = 2;
-			}
-			else
-			{
-				constexpr uint16_t IdealRepeats = TCNT / (TM - (TimerCode == 0)); //Timer0的OVF不可用，因此只能用COMPA，最大255
-				if (IdealRepeats * TM < TCNT || TimerCode == 0)					  //Timer0的OVF不可用
+				if (RepeatTimes > 0)
+					LR<TimerCode> = RepeatTimes;
+				if (IdealRepeats * TM < TCNT || TimerCode == 0) //Timer0的OVF不可用
 				{
 					if (Timer02)
 						TCCRA<TimerCode> = 2;
 					else
 						TCCRB<TimerCode> = PrescalerBits + 8;
 					constexpr uint16_t ActualRepeats = IdealRepeats + 1;
-					constexpr uint16_t TCNTSmall = TCNT / ActualRepeats;
-					constexpr uint16_t TCNTLarge = TCNTSmall + 1;
-					constexpr uint16_t SmallRepeats = ActualRepeats * TCNTLarge - TCNT;
-					constexpr uint16_t LargeRepeats = TCNT - ActualRepeats * TCNTSmall;
-					if (SmallRepeats)
+					constexpr uint16_t Tcnt1 = TCNT / ActualRepeats;
+					constexpr uint16_t Tcnt2 = Tcnt1 + 1;
+					constexpr uint16_t SR1 = ActualRepeats * Tcnt2 - TCNT; //必大于0
+					constexpr uint16_t SR2 = TCNT - ActualRepeats * Tcnt1;
+					SetOCRA<TimerCode>(Tcnt1);
+					SR<TimerCode> = SR1;
+					if (SR2)
 					{
-						SR<TimerCode> = SmallRepeats;
-						SetOCRA<TimerCode>(TCNTSmall);
-						if (LargeRepeats)
-						{
-							COMPA<TimerCode> = CompaRSmall<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-							if (TCNTLarge == TM)
-								OVF<TimerCode> = CompaRLarge<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-						}
-						else
-							COMPA<TimerCode> = CompaRSelf<TimerCode, DoTask, SmallRepeats>;
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0)>;
+						if (Tcnt2 == TM)
+							OVF<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0)>;
 					}
 					else
-					{
-						SR<TimerCode> = LargeRepeats;
-						if (TCNTLarge < TM)
-						{
-							SetOCRA<TimerCode>(TCNTLarge);
-							COMPA<TimerCode> = CompaRSelf<TimerCode, DoTask, LargeRepeats>;
-						}
-						else
-							OVF<TimerCode> = CompaRSelf<TimerCode, DoTask, LargeRepeats>;
-					}
+						COMPA<TimerCode> = Compa0<TimerCode, DoTask, SR1, (RepeatTimes < 0)>;
 					SetTCNT<TimerCode>(0);
 					TIMSK<TimerCode> = 2;
 				}
 				else
 				{
 					SR<TimerCode> = IdealRepeats;
-					OVF<TimerCode> = OvfR<TimerCode, DoTask, IdealRepeats>;
+					OVF<TimerCode> = Compa0<TimerCode, DoTask, IdealRepeats, (RepeatTimes < 0)>;
 					if (Timer02)
 						TCCRA<TimerCode> = 0;
 					else
 						TCCRB<TimerCode> = PrescalerBits;
 					SetTCNT<TimerCode>(0);
 					TIMSK<TimerCode> = 1;
-				}
-			}
-		}
-		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)(), uint32_t RepeatTimes>
-		void InternalRA()
-		{
-			switch (RepeatTimes)
-			{
-			case 0:
-				TIMSK<TimerCode> = 0;
-				break;
-			case 1:
-				InternalDA<TimerCode, TCNT, PrescalerBits, DoTask>();
-				break;
-			default:
-				constexpr uint32_t TM = TimerMax[TimerCode];
-				TIMSK<TimerCode> = 0;
-				constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
-				if (Timer02)
-					TCCRB<TimerCode> = PrescalerBits;
-				else
-					TCCRA<TimerCode> = 0;
-				//拒绝外部振荡源
-				bitWrite(ASSR, AS2, false);
-				LR<TimerCode> = RepeatTimes;
-				if (TCNT < TM)
-				{
-					if (Timer02)
-						TCCRA<TimerCode> = 2;
-					else
-						TCCRB<TimerCode> = PrescalerBits + 8;
-					SetOCRA<TimerCode>(TCNT);
-					COMPA<TimerCode> = []
-					{
-						if (!--LR<TimerCode>)
-							TIMSK<TimerCode> = 0;
-						DoTask();
-					};
-					SetTCNT<TimerCode>(0);
-					TIMSK<TimerCode> = 2;
-				}
-				else
-				{
-					constexpr uint16_t IdealRepeats = TCNT / (TM - (TimerCode == 0));
-					if (IdealRepeats * TM < TCNT || TimerCode == 0) //Timer0的OVF不可用
-					{
-						constexpr uint16_t ActualRepeats = IdealRepeats + 1;
-						constexpr uint16_t TCNTSmall = TCNT / ActualRepeats;
-						constexpr uint16_t TCNTLarge = TCNTSmall + 1;
-						constexpr uint16_t SmallRepeats = ActualRepeats * TCNTLarge - TCNT;
-						constexpr uint16_t LargeRepeats = TCNT - ActualRepeats * TCNTSmall;
-						if (Timer02)
-							TCCRA<TimerCode> = 2;
-						else
-							TCCRB<TimerCode> = PrescalerBits + 8;
-						if (SmallRepeats)
-						{
-							SR<TimerCode> = SmallRepeats;
-							SetOCRA<TimerCode>(TCNTSmall);
-							if (LargeRepeats)
-							{
-								COMPA<TimerCode> = CompaRSmallT<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-								if (TCNTLarge == TM)
-									OVF<TimerCode> = CompaRLargeT<TimerCode, DoTask, LargeRepeats, TCNTLarge, SmallRepeats, TCNTSmall>;
-							}
-							else
-								COMPA<TimerCode> = CompaRSelfRepeat<TimerCode, DoTask, SmallRepeats>;
-						}
-						else
-						{
-							SR<TimerCode> = LargeRepeats;
-							SetOCRA<TimerCode>(TCNTLarge);
-							COMPA<TimerCode> = CompaRSelfRepeat<TimerCode, DoTask, LargeRepeats>;
-						}
-						SetTCNT<TimerCode>(0);
-						TIMSK<TimerCode> = 2;
-					}
-					else
-					{
-						SR<TimerCode> = IdealRepeats;
-						OVF<TimerCode> = OvfRT<TimerCode, DoTask, IdealRepeats>;
-						SetTCNT<TimerCode>(0);
-						TIMSK<TimerCode> = 1;
-					}
 				}
 			}
 		}
@@ -597,7 +318,7 @@ namespace TimersOneForAll
 			{
 				constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
 				EfficientDigitalWrite<PinCode, HIGH>();
-				InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, EfficientDigitalToggle<PinCode>>();
+				SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, EfficientDigitalToggle<PinCode>>();
 			}
 			else
 			{
@@ -622,9 +343,9 @@ namespace TimersOneForAll
 					SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 					COMPA<TimerCode> = EfficientDigitalWrite<PinCode, HIGH>;
 					COMPB<TimerCode> = EfficientDigitalWrite<PinCode, LOW>;
-					EfficientDigitalWrite<PinCode, HIGH>();
 					SetTCNT<TimerCode>(0);
 					TIMSK<TimerCode> = 6;
+					EfficientDigitalWrite<PinCode, HIGH>();
 				}
 				else
 				{
@@ -677,7 +398,7 @@ namespace TimersOneForAll
 				{
 					constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
 					EfficientDigitalWrite<PinCode, HIGH>();
-					InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, EfficientDigitalToggle<PinCode>, RepeatTimes * 2 - 1>();
+					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, EfficientDigitalToggle<PinCode>, RepeatTimes * 2 - 1>();
 				}
 				else
 				{
@@ -747,66 +468,75 @@ namespace TimersOneForAll
 				}
 			}
 		}
+		template <uint8_t TimerCode>
+		static volatile bool Delaying;
+		template <uint8_t TimerCode>
+		void Undelay()
+		{
+			Delaying<TimerCode> = false;
+		}
 	}
 #pragma endregion
 #pragma region 公开API
-	//Call your function with a timer interrupt after given milliseconds
+	//在指定毫秒数后执行任务
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
 	void DoAfter()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, AfterMilliseconds);
-		Internal::InternalDA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask>();
+		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask, 1>();
 	}
-	//Repetitively and infinitely call your function with a timer interrupt for each given milliseconds. The first interrupt happens after your milliseconds, too.
-	template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)()>
+	//每隔指定毫秒数重复执行任务。重复次数若为负数，或不指定重复次数，则默认无限重复
+	template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), int32_t RepeatTimes = -1>
 	void RepeatAfter()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, IntervalMilliseconds);
-		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask>();
+		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask, RepeatTimes>();
 	}
-	//Repeat for only given times
-	template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), uint32_t RepeatTimes>
-	void RepeatAfter()
-	{
-		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, IntervalMilliseconds);
-		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, DoTask, RepeatTimes>();
-	}
-	//Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
+	//设置当前为零时刻进行计时。从MillisecondsElapsed变量读取经过的时间
 	template <uint8_t TimerCode>
 	void StartTiming()
 	{
 		MillisecondsElapsed<TimerCode> = 0;
 		RepeatAfter<TimerCode, 1, Internal::MEAdd<TimerCode>>();
 	}
-	//Play a tone of given frequency on given pin endlessly.
+	//无限播放音调
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz>
 	void PlayTone()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
 		Internal::EfficientDigitalToggle<PinCode>();
-		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>>();
+		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>>();
 	}
-	//Play for only given milliseconds
+	//播放有限的毫秒数
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, uint16_t Milliseconds>
 	void PlayTone()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
 		Internal::EfficientDigitalToggle<PinCode>();
-		Internal::InternalRA<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>, uint32_t(FrequencyHz) * Milliseconds / 500>();
+		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Internal::EfficientDigitalToggle<PinCode>, uint32_t(FrequencyHz) * Milliseconds / 500>();
 	}
-	//Generate an infinite sequence of square wave. The high level and low level can have different time length.
+	//生成高低电平时长不一的方波，无限循环
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
 	void SquareWave()
 	{
 		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds>();
 	}
-	//Generate the square wave for only given cycles.
+	//生成循环数有限的方波
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes>
 	void SquareWave()
 	{
 		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, RepeatTimes>();
 	}
-	//Abort all tasks assigned above.
+	//阻塞当前代码执行指定毫秒数
+	template <uint8_t TimerCode, uint16_t DelayMilliseconds>
+	void Delay()
+	{
+		Internal::Delaying<TimerCode> = true;
+		DoAfter<TimerCode, DelayMilliseconds, Internal::Undelay<TimerCode>>();
+		while (Internal::Delaying<TimerCode>)
+			;
+	}
+	//取消上述任何任务。只影响特定的计时器。
 	template <uint8_t TimerCode>
 	void ShutDown()
 	{
