@@ -10,7 +10,7 @@ namespace TimersOneForAll
 			MillisecondsElapsed<TimerCode> ++;
 		}
 	}
-	//设置当前为零时刻进行计时。从MillisecondsElapsed变量读取经过的时间
+	//设置当前为零时刻进行计时。从MillisecondsElapsed变量读取经过的毫秒数
 	template <uint8_t TimerCode>
 	void StartTiming()
 	{

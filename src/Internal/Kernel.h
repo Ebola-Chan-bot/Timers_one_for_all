@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+//#include "Debugger.h"
 namespace TimersOneForAll
 {
 	//取得上次调用StartTiming以来经过的毫秒数
@@ -16,36 +17,65 @@ namespace TimersOneForAll
 			uint32_t TCNT;
 		};
 		constexpr uint32_t TimerMax[] = {256, 65536, 256, 65536, 65536, 65536};
-		constexpr TimerSetting SelectPrescaler(uint8_t TimerCode, float Milliseconds, const uint16_t ValidPrescalers[], uint8_t NoVPs)
+		constexpr uint8_t NoPrescalers[] = {5, 5, 7, 5, 5, 5};
+		constexpr uint16_t ValidPrescalers[][7] = {
+			{1, 8, 64, 256, 1024},
+			{1, 8, 64, 256, 1024},
+			{1, 8, 32, 64, 128, 256, 1024},
+			{1, 8, 64, 256, 1024},
+			{1, 8, 64, 256, 1024},
+			{1, 8, 64, 256, 1024},
+		};
+#define TVNN(Code, Prescaler) TimerMax[Code] * ValidPrescalers[Code][Prescaler] / float(F_CPU) * 1000
+#define TVNN5(Code) TVNN(Code, 0), TVNN(Code, 1), TVNN(Code, 2), TVNN(Code, 3), TVNN(Code, 4)
+		constexpr float MaxMilliseconds[][7] = {
+			{TVNN5(0)},
+			{TVNN5(1)},
+			{TVNN5(2), TVNN(2, 5), TVNN(2, 6)},
+			{TVNN5(3)},
+			{TVNN5(4)},
+			{TVNN5(5)},
+		};
+		constexpr TimerSetting GetTimerSetting(uint8_t TimerCode, float Milliseconds)
 		{
-			float NoOscillations = F_CPU * Milliseconds / 1000;
-			float IdealPrescaler = NoOscillations / (TimerMax[TimerCode] - (TimerCode == 0));
+			uint8_t NPTC = NoPrescalers[TimerCode];
 			uint8_t PrescalerBits = 0;
-			uint16_t ActualPrescaler = 0;
-			for (; (ActualPrescaler = ValidPrescalers[PrescalerBits++]) < IdealPrescaler && PrescalerBits < NoVPs;)
-				;
-			return {PrescalerBits, NoOscillations / ActualPrescaler};
+			for (; PrescalerBits < NPTC; ++PrescalerBits)
+				if (Milliseconds < MaxMilliseconds[TimerCode][PrescalerBits])
+					break;
+			if (PrescalerBits == NPTC)
+				return {PrescalerBits, F_CPU * Milliseconds / 1000 / ValidPrescalers[TimerCode][PrescalerBits - 1]};
+			else
+				return {PrescalerBits + 1, F_CPU * Milliseconds / 1000 / ValidPrescalers[TimerCode][PrescalerBits]};
 		};
-		constexpr TimerSetting GetTimerSetting(uint8_t TimerCode, float Miliseconds)
+		template <uint8_t TimerCode>
+		TimerSetting GetTimerSetting(float Milliseconds)
 		{
-			constexpr uint16_t ValidPrescalers[] = {1, 8, 64, 256, 1024};
-			constexpr uint16_t ValidPrescalers2[] = {1, 8, 32, 64, 128, 256, 1024};
-			bool TC2 = TimerCode == 2;
-			return SelectPrescaler(TimerCode, Miliseconds, TC2 ? ValidPrescalers2 : ValidPrescalers, TC2 ? 7 : 5);
-		};
+			constexpr uint8_t NPTC = NoPrescalers[TimerCode];
+			uint8_t PrescalerBits = 0;
+			for (; PrescalerBits < NPTC; ++PrescalerBits)
+				if (Milliseconds < MaxMilliseconds[TimerCode][PrescalerBits])
+					break;
+			if (PrescalerBits == NPTC)
+				return {PrescalerBits, F_CPU * Milliseconds / 1000 / ValidPrescalers[TimerCode][PrescalerBits - 1]};
+			else
+				return {PrescalerBits + 1, F_CPU * Milliseconds / 1000 / ValidPrescalers[TimerCode][PrescalerBits]};
+		}
 #pragma endregion
 #pragma region 硬件寄存器
 		template <uint8_t TimerCode>
 		volatile uint8_t &TCCRA;
 		template <uint8_t TimerCode>
 		volatile uint8_t &TCCRB;
+		template <uint8_t TimerCode>
+		volatile uint8_t &TIMSK;
+		template <uint8_t TimerCode>
+		volatile uint8_t &TIFR;
 		//TCNT有可能是uint8_t或uint16_t类型，因此不能直接取引用
 		template <uint8_t TimerCode>
 		uint16_t GetTCNT();
 		template <uint8_t TimerCode>
 		void SetTCNT(uint16_t TCNT);
-		template <uint8_t TimerCode>
-		volatile uint8_t &TIMSK;
 		template <uint8_t TimerCode>
 		uint16_t GetOCRA();
 		template <uint8_t TimerCode>
@@ -67,6 +97,8 @@ namespace TimersOneForAll
 	volatile uint8_t &TCCRB<Code> = TCCR##Code##B; \
 	template <>                                    \
 	volatile uint8_t &TIMSK<Code> = TIMSK##Code;   \
+	template <>                                    \
+	volatile uint8_t &TIFR<Code> = TIFR##Code;     \
 	template <>                                    \
 	uint16_t GetTCNT<Code>()                       \
 	{                                              \
@@ -145,7 +177,7 @@ namespace TimersOneForAll
 		}
 #endif
 #pragma endregion
-#pragma region 内部功能实现核心
+#pragma region 通用内核
 		template <uint8_t TimerCode>
 		volatile static uint32_t SR;
 		template <uint8_t TimerCode>
@@ -167,20 +199,8 @@ namespace TimersOneForAll
 			else
 				*PinPort &= ~BitMask;
 		}
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighTCNT, uint16_t LowTCNT>
-		void CompaSquareWave()
-		{
-			SetOCRA<TimerCode>(GetOCRA<TimerCode>() == HighTCNT ? LowTCNT : HighTCNT);
-			EfficientDigitalToggle<PinCode>();
-		}
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighTCNT, uint16_t LowTCNT>
-		void CompaSquareWaveT()
-		{
-			SetOCRA<TimerCode>(GetOCRA<TimerCode>() == HighTCNT ? LowTCNT : HighTCNT);
-			EfficientDigitalToggle<PinCode>();
-			if (!--LR<TimerCode>)
-				TIMSK<TimerCode> = 0;
-		}
+#pragma endregion
+#pragma region 全模板实现
 		//Compa0表示自我重复，不切换
 		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SmallRepeats, bool InfiniteLr>
 		void Compa0()
@@ -271,6 +291,7 @@ namespace TimersOneForAll
 					else
 						COMPA<TimerCode> = Compa0<TimerCode, DoTask, SR1, (RepeatTimes < 0)>;
 					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
 					TIMSK<TimerCode> = 2;
 				}
 				else
@@ -282,9 +303,130 @@ namespace TimersOneForAll
 					else
 						TCCRB<TimerCode> = PrescalerBits;
 					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
 					TIMSK<TimerCode> = 1;
 				}
 			}
 		}
+#pragma endregion
+#pragma region 时长可变实现
+		template <uint8_t TimerCode>
+		uint16_t Tcnt1;
+		template <uint8_t TimerCode>
+		uint16_t Tcnt2;
+		template <uint8_t TimerCode>
+		uint16_t SR1;
+		template <uint8_t TimerCode>
+		uint16_t SR2;
+		//Compa0表示自我重复，不切换
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr>
+		void Compa0()
+		{
+			if (!--SR<TimerCode>)
+			{
+				if (InfiniteLr || --LR<TimerCode>)
+					SR<TimerCode> = SR1<TimerCode>;
+				else
+					TIMSK<TimerCode> = 0;
+				DoTask();
+			}
+		}
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		void Compa2();
+		//Compa1是小重复，结束后要切换到大重复，但是大重复有可能是COMPA也可能是OVF
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		void Compa1()
+		{
+			if (!--SR<TimerCode>)
+			{
+				if (UseOvf)
+					TIMSK<TimerCode> = 1;
+				else
+				{
+					SetOCRA<TimerCode>(Tcnt2<TimerCode>);
+					COMPA<TimerCode> = Compa2<TimerCode, DoTask, InfiniteLr, UseOvf>;
+				}
+				SR<TimerCode> = SR2<TimerCode>;
+			}
+		}
+		//Compa2是大重复，结束后要执行动作，如果有重复次数还要切换到小重复
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		void Compa2()
+		{
+			if (!--SR<TimerCode>)
+			{
+				if (InfiniteLr || --LR<TimerCode>)
+				{
+					if (UseOvf)
+						TIMSK<TimerCode> = 2;
+					else
+					{
+						SetOCRA<TimerCode>(Tcnt1<TimerCode>);
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, InfiniteLr, UseOvf>;
+					}
+					SR<TimerCode> = SR1<TimerCode>;
+				}
+				else
+					TIMSK<TimerCode> = 0;
+				DoTask();
+			}
+		}
+		template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes = -1>
+		void SLRepeaterSet(uint32_t TCNT, uint8_t PrescalerBits)
+		{
+			TIMSK<TimerCode> = 0;
+			if (RepeatTimes != 0)
+			{
+				constexpr uint32_t TM = TimerMax[TimerCode];
+				SR1<TimerCode> = TCNT / (TM - (TimerCode == 0));
+				constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
+				constexpr bool InfiniteRepeat = RepeatTimes < 0;
+				if (Timer02)
+					TCCRB<TimerCode> = PrescalerBits;
+				else
+					TCCRA<TimerCode> = 0;
+				if (!InfiniteRepeat)
+					LR<TimerCode> = RepeatTimes;
+				if (SR1<TimerCode> * TM < TCNT || TimerCode == 0) //Timer0的OVF不可用
+				{
+					if (Timer02)
+						TCCRA<TimerCode> = 2;
+					else
+						TCCRB<TimerCode> = PrescalerBits + 8;
+					uint16_t ActualRepeats = SR1<TimerCode> + 1;
+					Tcnt1<TimerCode> = TCNT / ActualRepeats;
+					Tcnt2<TimerCode> = Tcnt1<TimerCode> + 1;
+					SR1<TimerCode> = ActualRepeats * Tcnt2<TimerCode> - TCNT; //必大于0
+					SR2<TimerCode> = TCNT - ActualRepeats * Tcnt1<TimerCode>;
+					SetOCRA<TimerCode>(Tcnt1<TimerCode>);
+					SR<TimerCode> = SR1<TimerCode>;
+					bool UseOvf = Tcnt2<TimerCode> == TM;
+					if (SR2<TimerCode>)
+					{
+						COMPA<TimerCode> = UseOvf ? Compa1<TimerCode, DoTask, InfiniteRepeat, true> : Compa1<TimerCode, DoTask, InfiniteRepeat, false>;
+						if (Tcnt2<TimerCode> == TM)
+							OVF<TimerCode> = UseOvf ? Compa2<TimerCode, DoTask, InfiniteRepeat, true> : Compa2<TimerCode, DoTask, InfiniteRepeat, false>;
+					}
+					else
+						COMPA<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat>;
+					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
+					TIMSK<TimerCode> = 2;
+				}
+				else
+				{
+					SR<TimerCode> = SR1<TimerCode>;
+					OVF<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat>;
+					if (Timer02)
+						TCCRA<TimerCode> = 0;
+					else
+						TCCRB<TimerCode> = PrescalerBits;
+					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
+					TIMSK<TimerCode> = 1;
+				}
+			}
+		}
+#pragma endregion
 	}
 }

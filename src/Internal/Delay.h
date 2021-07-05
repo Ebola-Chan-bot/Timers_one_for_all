@@ -16,8 +16,17 @@ namespace TimersOneForAll
 	template <uint8_t TimerCode, uint16_t DelayMilliseconds>
 	void Delay()
 	{
-		Internal::Delaying<TimerCode> = true;
 		DoAfter<TimerCode, DelayMilliseconds, Internal::Undelay<TimerCode>>();
+		Internal::Delaying<TimerCode> = true;
+		while (Internal::Delaying<TimerCode>)
+			;
+	}
+	//阻塞当前代码执行指定毫秒数
+	template <uint8_t TimerCode>
+	void Delay(uint16_t DelayMilliseconds)
+	{
+		DoAfter<TimerCode, Internal::Undelay<TimerCode>>(DelayMilliseconds);
+		Internal::Delaying<TimerCode> = true;
 		while (Internal::Delaying<TimerCode>)
 			;
 	}
