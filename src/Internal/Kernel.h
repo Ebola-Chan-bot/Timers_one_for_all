@@ -3,11 +3,35 @@
 //#include "Debugger.h"
 namespace TimersOneForAll
 {
+	//礼品API：虽然跟本库主题不合，但本库实际上用到了，并且觉得你可能也会感兴趣
+	namespace Gifts
+	{		
+		//快速翻转引脚电平，比digitalWrite性能更高
+		template <uint8_t PinCode>
+		void EfficientDigitalToggle()
+		{
+			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
+			const uint8_t BitMask = digitalPinToBitMask(PinCode);
+			*PinPort ^= BitMask;
+		}
+		//快速设置引脚电平，比digitalWrite性能更高
+		template <uint8_t PinCode, bool IsHigh>
+		void EfficientDigitalWrite()
+		{
+			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
+			const uint8_t BitMask = digitalPinToBitMask(PinCode);
+			if (IsHigh)
+				*PinPort |= BitMask;
+			else
+				*PinPort &= ~BitMask;
+		}
+	}
 	//取得上次调用StartTiming以来经过的毫秒数
 	template <uint8_t TimerCode>
 	static volatile uint16_t MillisecondsElapsed;
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
 	void DoAfter();
+	//不要使用这个命名空间，除非你很清楚自己在做什么
 	namespace Internal
 	{
 #pragma region 预分频器
@@ -182,23 +206,6 @@ namespace TimersOneForAll
 		static volatile uint32_t SR;
 		template <uint8_t TimerCode>
 		static volatile int32_t LR;
-		template <uint8_t PinCode>
-		void EfficientDigitalToggle()
-		{
-			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
-			const uint8_t BitMask = digitalPinToBitMask(PinCode);
-			*PinPort ^= BitMask;
-		}
-		template <uint8_t PinCode, bool IsHigh>
-		void EfficientDigitalWrite()
-		{
-			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
-			const uint8_t BitMask = digitalPinToBitMask(PinCode);
-			if (IsHigh)
-				*PinPort |= BitMask;
-			else
-				*PinPort &= ~BitMask;
-		}
 #pragma endregion
 #pragma region 全模板实现
 		//Compa0表示自我重复，不切换
