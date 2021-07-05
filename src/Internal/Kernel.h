@@ -64,13 +64,13 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 硬件寄存器
 		template <uint8_t TimerCode>
-		volatile uint8_t &TCCRA;
+		static volatile uint8_t &TCCRA;
 		template <uint8_t TimerCode>
-		volatile uint8_t &TCCRB;
+		static volatile uint8_t &TCCRB;
 		template <uint8_t TimerCode>
-		volatile uint8_t &TIMSK;
+		static volatile uint8_t &TIMSK;
 		template <uint8_t TimerCode>
-		volatile uint8_t &TIFR;
+		static volatile uint8_t &TIFR;
 		//TCNT有可能是uint8_t或uint16_t类型，因此不能直接取引用
 		template <uint8_t TimerCode>
 		uint16_t GetTCNT();
@@ -85,11 +85,11 @@ namespace TimersOneForAll
 		template <uint8_t TimerCode>
 		void SetOCRB(uint16_t OCRB);
 		template <uint8_t TimerCode>
-		void (*volatile OVF)();
+		static void (*volatile OVF)();
 		template <uint8_t TimerCode>
-		void (*volatile COMPA)();
+		static void (*volatile COMPA)();
 		template <uint8_t TimerCode>
-		void (*volatile COMPB)();
+		static void (*volatile COMPB)();
 #define TimerSpecialize(Code)                      \
 	template <>                                    \
 	volatile uint8_t &TCCRA<Code> = TCCR##Code##A; \
@@ -179,9 +179,9 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 通用内核
 		template <uint8_t TimerCode>
-		volatile static uint32_t SR;
+		static volatile uint32_t SR;
 		template <uint8_t TimerCode>
-		volatile static int32_t LR;
+		static volatile int32_t LR;
 		template <uint8_t PinCode>
 		void EfficientDigitalToggle()
 		{
@@ -311,13 +311,13 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 时长可变实现
 		template <uint8_t TimerCode>
-		uint16_t Tcnt1;
+		static volatile uint16_t Tcnt1;
 		template <uint8_t TimerCode>
-		uint16_t Tcnt2;
+		static volatile uint16_t Tcnt2;
 		template <uint8_t TimerCode>
-		uint16_t SR1;
+		static volatile uint16_t SR1;
 		template <uint8_t TimerCode>
-		uint16_t SR2;
+		static volatile uint16_t SR2;
 		//Compa0表示自我重复，不切换
 		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr>
 		void Compa0()
