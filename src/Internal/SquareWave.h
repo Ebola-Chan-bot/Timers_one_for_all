@@ -10,14 +10,14 @@ namespace TimersOneForAll
 		void SquareWaveToHigh()
 		{
 			DoAfter<TimerCode, HighMilliseconds, SquareWaveToLow<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr>>();
-			EfficientDigitalWrite<PinCode, HIGH>();
+			Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 		}
 		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr>
 		void SquareWaveToLow()
 		{
 			if (InfiniteLr || --LR<TimerCode>)
 				DoAfter<TimerCode, LowMilliseconds, SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr>>();
-			EfficientDigitalWrite<PinCode, LOW>();
+			Gifts::EfficientDigitalWrite<PinCode, LOW>();
 		}
 		//这里要求RepeatTimes不能超过uint32_t上限的一半，故干脆直接限制为int32_t
 		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int32_t RepeatTimes = -1>
@@ -29,15 +29,15 @@ namespace TimersOneForAll
 				TIMSK<TimerCode> = 0;
 				break;
 			case 1:
-				EfficientDigitalWrite<PinCode, HIGH>();
-				DoAfter<TimerCode, HighMilliseconds, EfficientDigitalWrite<PinCode, LOW>>();
+				Gifts::EfficientDigitalWrite<PinCode, HIGH>();
+				DoAfter<TimerCode, HighMilliseconds, Gifts::EfficientDigitalWrite<PinCode, LOW>>();
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
-					EfficientDigitalWrite<PinCode, HIGH>();
-					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>();
+					Gifts::EfficientDigitalWrite<PinCode, HIGH>();
+					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>();
 				}
 				else
 				{
@@ -61,14 +61,14 @@ namespace TimersOneForAll
 						SetOCRA<TimerCode>(TryTS.TCNT);
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
-						COMPA<TimerCode> = EfficientDigitalWrite<PinCode, HIGH>;
+						COMPA<TimerCode> = Gifts::EfficientDigitalWrite<PinCode, HIGH>;
 						COMPB<TimerCode> = []
 						{
-							EfficientDigitalWrite<PinCode, LOW>();
+							Gifts::EfficientDigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
 								TIMSK<TimerCode> = 0;
 						};
-						EfficientDigitalWrite<PinCode, HIGH>();
+						Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
 						TIFR<TimerCode> = 255;
 						TIMSK<TimerCode> = 6;
@@ -88,14 +88,14 @@ namespace TimersOneForAll
 		void SquareWaveToHigh()
 		{
 			DoAfter<TimerCode, SquareWaveToLow<TimerCode, PinCode, InfiniteLr>>(HM<TimerCode>);
-			EfficientDigitalWrite<PinCode, HIGH>();
+			Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 		}
 		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr>
 		void SquareWaveToLow()
 		{
 			if (InfiniteLr || --LR<TimerCode>)
 				DoAfter<TimerCode, SquareWaveToHigh<TimerCode, PinCode, InfiniteLr>>(LM<TimerCode>);
-			EfficientDigitalWrite<PinCode, LOW>();
+			Gifts::EfficientDigitalWrite<PinCode, LOW>();
 		}
 		//这里要求RepeatTimes不能超过uint32_t上限的一半，故干脆直接限制为int32_t
 		template <uint8_t TimerCode, uint8_t PinCode, int32_t RepeatTimes = -1>
@@ -107,15 +107,15 @@ namespace TimersOneForAll
 				TIMSK<TimerCode> = 0;
 				break;
 			case 1:
-				EfficientDigitalWrite<PinCode, HIGH>();
-				DoAfter<TimerCode, EfficientDigitalWrite<PinCode, LOW>>(HighMilliseconds);
+				Gifts::EfficientDigitalWrite<PinCode, HIGH>();
+				DoAfter<TimerCode, Gifts::EfficientDigitalWrite<PinCode, LOW>>(HighMilliseconds);
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
-					EfficientDigitalWrite<PinCode, HIGH>();
-					SLRepeaterSet<TimerCode, EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>(TS.TCNT, TS.PrescalerBits);
+					Gifts::EfficientDigitalWrite<PinCode, HIGH>();
+					SLRepeaterSet<TimerCode, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>(TS.TCNT, TS.PrescalerBits);
 				}
 				else
 				{
@@ -139,14 +139,14 @@ namespace TimersOneForAll
 						SetOCRA<TimerCode>(TryTS.TCNT);
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
-						COMPA<TimerCode> = EfficientDigitalWrite<PinCode, HIGH>;
+						COMPA<TimerCode> = Gifts::EfficientDigitalWrite<PinCode, HIGH>;
 						COMPB<TimerCode> = []
 						{
-							EfficientDigitalWrite<PinCode, LOW>();
+							Gifts::EfficientDigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
 								TIMSK<TimerCode> = 0;
 						};
-						EfficientDigitalWrite<PinCode, HIGH>();
+						Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
 						TIFR<TimerCode> = 255;
 						TIMSK<TimerCode> = 6;
