@@ -91,27 +91,27 @@ void PlayTone(uint16_t Milliseconds);
 //在引脚上生成无限循环的方波。不同于音调，这里可以指定高电平和低电平的不同时长
 //Generate an infinite sequence of square wave. The high level and low level can have different time length.
 template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
-void SquareWave()
+void SquareWave();
 //仅生成有限个周期数的方波。周期全部结束后触发DoneCallback回调
 //Generate the square wave for only RepeatTimes cycles. After all cycles done, DoneCallback is called.
 template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void SquareWave()
+void SquareWave();
 //允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。周期全部结束后触发DoneCallback回调
 //Specify milliseconds at runtime. After all cycles done, DoneCallback is called.
 template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds)
+void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds);
 
 //阻塞当前代码执行指定毫秒数
 //Block current code from running for DelayMilliseconds
 template <uint8_t TimerCode, uint16_t DelayMilliseconds>
-void Delay()
+void Delay();
 //允许运行时动态设置毫秒数
 //Specify milliseconds at runtime
 template <uint8_t TimerCode>
-void Delay(uint16_t DelayMilliseconds)
+void Delay(uint16_t DelayMilliseconds);
 
 //取消指定给特定计时器的所有任务。其它计时器不受影响。
 //Abort all tasks assigned to TimerCode. Other timers won't be affected.
 template <uint8_t TimerCode>
-void ShutDown()
+void ShutDown();
 ```
