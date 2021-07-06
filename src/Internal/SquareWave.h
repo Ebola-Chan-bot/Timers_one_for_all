@@ -4,40 +4,51 @@ namespace TimersOneForAll
 {
 	namespace Internal
 	{
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow();
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToHigh()
 		{
-			DoAfter<TimerCode, HighMilliseconds, SquareWaveToLow<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr>>();
+			DoAfter<TimerCode, HighMilliseconds, SquareWaveToLow<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr, DoneCallback>>();
 			Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 		}
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow()
 		{
-			if (InfiniteLr || --LR<TimerCode>)
-				DoAfter<TimerCode, LowMilliseconds, SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr>>();
 			Gifts::EfficientDigitalWrite<PinCode, LOW>();
+			if (InfiniteLr || --LR<TimerCode>)
+				DoAfter<TimerCode, LowMilliseconds, SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr, DoneCallback>>();
+			else if (DoneCallback)
+				DoneCallback();
+		}
+		template <uint8_t PinCode, void (*DoneCallback)()>
+		void OneShotSWDone()
+		{
+			Gifts::EfficientDigitalWrite<PinCode, LOW>();
+			if (DoneCallback)
+				DoneCallback();
 		}
 		//这里要求RepeatTimes不能超过uint32_t上限的一半，故干脆直接限制为int32_t
-		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int32_t RepeatTimes = -1>
+		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int32_t RepeatTimes, void (*DoneCallback)()>
 		void InternalSW()
 		{
 			switch (RepeatTimes)
 			{
 			case 0:
 				TIMSK<TimerCode> = 0;
+				if (DoneCallback)
+					DoneCallback();
 				break;
 			case 1:
 				Gifts::EfficientDigitalWrite<PinCode, HIGH>();
-				DoAfter<TimerCode, HighMilliseconds, Gifts::EfficientDigitalWrite<PinCode, LOW>>();
+				DoAfter<TimerCode, HighMilliseconds, OneShotSWDone<PinCode, DoneCallback>>();
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
 					Gifts::EfficientDigitalWrite<PinCode, HIGH>();
-					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>();
+					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1, DoneCallback>();
 				}
 				else
 				{
@@ -66,7 +77,11 @@ namespace TimersOneForAll
 						{
 							Gifts::EfficientDigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
+							{
 								TIMSK<TimerCode> = 0;
+								if (DoneCallback)
+									DoneCallback();
+							}
 						};
 						Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
@@ -74,7 +89,7 @@ namespace TimersOneForAll
 						TIMSK<TimerCode> = 6;
 					}
 					else
-						SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, (RepeatTimes < 0)>();
+						SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, (RepeatTimes < 0), DoneCallback>();
 				}
 			}
 		}
@@ -82,40 +97,44 @@ namespace TimersOneForAll
 		static volatile uint16_t HM;
 		template <uint8_t TimerCode>
 		static volatile uint16_t LM;
-		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow();
-		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToHigh()
 		{
-			DoAfter<TimerCode, SquareWaveToLow<TimerCode, PinCode, InfiniteLr>>(HM<TimerCode>);
+			DoAfter<TimerCode, SquareWaveToLow<TimerCode, PinCode, InfiniteLr, DoneCallback>>(HM<TimerCode>);
 			Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 		}
-		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr>
+		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow()
 		{
-			if (InfiniteLr || --LR<TimerCode>)
-				DoAfter<TimerCode, SquareWaveToHigh<TimerCode, PinCode, InfiniteLr>>(LM<TimerCode>);
 			Gifts::EfficientDigitalWrite<PinCode, LOW>();
+			if (InfiniteLr || --LR<TimerCode>)
+				DoAfter<TimerCode, SquareWaveToHigh<TimerCode, PinCode, InfiniteLr, DoneCallback>>(LM<TimerCode>);
+			else if (DoneCallback)
+				DoneCallback();
 		}
 		//这里要求RepeatTimes不能超过uint32_t上限的一半，故干脆直接限制为int32_t
-		template <uint8_t TimerCode, uint8_t PinCode, int32_t RepeatTimes = -1>
+		template <uint8_t TimerCode, uint8_t PinCode, int32_t RepeatTimes, void (*DoneCallback)()>
 		void InternalSW(uint16_t HighMilliseconds, uint16_t LowMilliseconds)
 		{
 			switch (RepeatTimes)
 			{
 			case 0:
 				TIMSK<TimerCode> = 0;
+				if (DoneCallback)
+					DoneCallback();
 				break;
 			case 1:
 				Gifts::EfficientDigitalWrite<PinCode, HIGH>();
-				DoAfter<TimerCode, Gifts::EfficientDigitalWrite<PinCode, LOW>>(HighMilliseconds);
+				DoAfter<TimerCode, OneShotSWDone<PinCode, DoneCallback>>(HighMilliseconds);
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
 					Gifts::EfficientDigitalWrite<PinCode, HIGH>();
-					SLRepeaterSet<TimerCode, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1>(TS.TCNT, TS.PrescalerBits);
+					SLRepeaterSet<TimerCode, Gifts::EfficientDigitalToggle<PinCode>, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1, DoneCallback>(TS.TCNT, TS.PrescalerBits);
 				}
 				else
 				{
@@ -144,7 +163,11 @@ namespace TimersOneForAll
 						{
 							Gifts::EfficientDigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
+							{
 								TIMSK<TimerCode> = 0;
+								if (DoneCallback)
+									DoneCallback();
+							}
 						};
 						Gifts::EfficientDigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
@@ -155,34 +178,22 @@ namespace TimersOneForAll
 					{
 						HM<TimerCode> = HighMilliseconds;
 						LM<TimerCode> = LowMilliseconds;
-						SquareWaveToHigh<TimerCode, PinCode, (RepeatTimes < 0)>();
+						SquareWaveToHigh<TimerCode, PinCode, (RepeatTimes < 0), DoneCallback>();
 					}
 				}
 			}
 		}
 	}
-	//生成高低电平时长不一的方波，无限循环
-	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
+	//生成循环数有限的方波。如不指定循环次数，默认无限循环
+	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
 	void SquareWave()
 	{
-		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds>();
+		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, RepeatTimes, DoneCallback>();
 	}
-	//生成循环数有限的方波
-	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes>
-	void SquareWave()
-	{
-		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, RepeatTimes>();
-	}
-	//生成高低电平时长不一的方波，无限循环
-	template <uint8_t TimerCode, uint8_t PinCode>
+	//生成循环数有限的方波。如不指定循环次数，默认无限循环
+	template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
 	void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds)
 	{
-		Internal::InternalSW<TimerCode, PinCode>(HighMilliseconds, LowMilliseconds);
-	}
-	//生成循环数有限的方波
-	template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes>
-	void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds)
-	{
-		Internal::InternalSW<TimerCode, PinCode, RepeatTimes>(HighMilliseconds, LowMilliseconds);
+		Internal::InternalSW<TimerCode, PinCode, RepeatTimes, DoneCallback>(HighMilliseconds, LowMilliseconds);
 	}
 }

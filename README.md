@@ -57,13 +57,13 @@ void DoAfter(uint16_t AfterMilliseconds);
 //Repetitively and infinitely call your function with a timer interrupt for each IntervalMilliseconds. The first interrupt happens after IntervalMilliseconds, too.
 template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)()>
 void RepeatAfter();
-//仅重复有限次数
-//Repeat for only RepeatTimes
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), int32_t RepeatTimes>
+//仅重复有限次数，重复全部结束后触发DoneCallback回调
+//Repeat for only RepeatTimes. After all repeats done, DoneCallback is called.
+template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void RepeatAfter();
-//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。
-//Specify milliseconds at runtime
-template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes>
+//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。重复全部结束后触发DoneCallback回调
+//Specify milliseconds at runtime. After all repeats done, DoneCallback is called.
+template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void RepeatAfter(uint16_t IntervalMilliseconds);
 
 //将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。
@@ -79,26 +79,26 @@ static volatile uint16_t MillisecondsElapsed;
 //Play a tone of FrequencyHz on PinCode endlessly.
 template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz>
 void PlayTone();
-//只播放限定的毫秒数
-//Play for only given Milliseconds
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, uint16_t Milliseconds>
+//只播放限定的毫秒数。播放结束后触发DoneCallback回调
+//Play for only given Milliseconds. After the tone ended, DoneCallback is called.
+template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, uint16_t Milliseconds, void (*DoneCallback)() = nullptr>
 void PlayTone();
-//允许运行时动态设置毫秒数。
-//Specify milliseconds at runtime
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz>
+//允许运行时动态设置毫秒数。播放结束后触发DoneCallback回调
+//Specify milliseconds at runtime. After the tone ended, DoneCallback is called.
+template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, void (*DoneCallback)() = nullptr>
 void PlayTone(uint16_t Milliseconds);
 
 //在引脚上生成无限循环的方波。不同于音调，这里可以指定高电平和低电平的不同时长
 //Generate an infinite sequence of square wave. The high level and low level can have different time length.
 template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
 void SquareWave()
-//仅生成有限个周期数的方波
-//Generate the square wave for only RepeatTimes cycles.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes>
+//仅生成有限个周期数的方波。周期全部结束后触发DoneCallback回调
+//Generate the square wave for only RepeatTimes cycles. After all cycles done, DoneCallback is called.
+template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void SquareWave()
-//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。
-//Specify milliseconds at runtime
-template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes>
+//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。周期全部结束后触发DoneCallback回调
+//Specify milliseconds at runtime. After all cycles done, DoneCallback is called.
+template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds)
 
 //阻塞当前代码执行指定毫秒数

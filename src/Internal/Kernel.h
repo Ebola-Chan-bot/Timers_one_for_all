@@ -5,7 +5,7 @@ namespace TimersOneForAll
 {
 	//礼品API：虽然跟本库主题不合，但本库实际上用到了，并且觉得你可能也会感兴趣
 	namespace Gifts
-	{		
+	{
 		//快速翻转引脚电平，比digitalWrite性能更高
 		template <uint8_t PinCode>
 		void EfficientDigitalToggle()
@@ -209,7 +209,7 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 全模板实现
 		//Compa0表示自我重复，不切换
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SmallRepeats, bool InfiniteLr>
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t SmallRepeats, bool InfiniteLr, void (*DoneCallback)()>
 		void Compa0()
 		{
 			if (!--SR<TimerCode>)
@@ -217,14 +217,18 @@ namespace TimersOneForAll
 				if (InfiniteLr || --LR<TimerCode>)
 					SR<TimerCode> = SmallRepeats;
 				else
+				{
 					TIMSK<TimerCode> = 0;
+					if (DoneCallback)
+						DoneCallback();
+				}
 				DoTask();
 			}
 		}
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr, void (*DoneCallback)()>
 		void Compa2();
 		//Compa1是小重复，结束后要切换到大重复，但是大重复有可能是COMPA也可能是OVF
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr, void (*DoneCallback)()>
 		void Compa1()
 		{
 			if (!--SR<TimerCode>)
@@ -232,7 +236,7 @@ namespace TimersOneForAll
 				if (Tcnt2 < TimerMax[TimerCode])
 				{
 					SetOCRA<TimerCode>(Tcnt2);
-					COMPA<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr>;
+					COMPA<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr, DoneCallback>;
 				}
 				else
 					TIMSK<TimerCode> = 1;
@@ -240,7 +244,7 @@ namespace TimersOneForAll
 			}
 		}
 		//Compa2是大重复，结束后要执行动作，如果有重复次数还要切换到小重复
-		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr>
+		template <uint8_t TimerCode, void (*DoTask)(), uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr, void (*DoneCallback)()>
 		void Compa2()
 		{
 			if (!--SR<TimerCode>)
@@ -250,18 +254,22 @@ namespace TimersOneForAll
 					if (Tcnt2 < TimerMax[TimerCode])
 					{
 						SetOCRA<TimerCode>(Tcnt1);
-						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr>;
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, InfiniteLr, DoneCallback>;
 					}
 					else
 						TIMSK<TimerCode> = 2;
 					SR<TimerCode> = SR1;
 				}
 				else
+				{
 					TIMSK<TimerCode> = 0;
+					if (DoneCallback)
+						DoneCallback();
+				}
 				DoTask();
 			}
 		}
-		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)(), int32_t RepeatTimes = -1>
+		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)()>
 		void SLRepeaterSet()
 		{
 			TIMSK<TimerCode> = 0;
@@ -291,12 +299,12 @@ namespace TimersOneForAll
 					SR<TimerCode> = SR1;
 					if (SR2)
 					{
-						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0)>;
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0), DoneCallback>;
 						if (Tcnt2 == TM)
-							OVF<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0)>;
+							OVF<TimerCode> = Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, (RepeatTimes < 0), DoneCallback>;
 					}
 					else
-						COMPA<TimerCode> = Compa0<TimerCode, DoTask, SR1, (RepeatTimes < 0)>;
+						COMPA<TimerCode> = Compa0<TimerCode, DoTask, SR1, (RepeatTimes < 0), DoneCallback>;
 					SetTCNT<TimerCode>(0);
 					TIFR<TimerCode> = 255;
 					TIMSK<TimerCode> = 2;
@@ -304,7 +312,7 @@ namespace TimersOneForAll
 				else
 				{
 					SR<TimerCode> = IdealRepeats;
-					OVF<TimerCode> = Compa0<TimerCode, DoTask, IdealRepeats, (RepeatTimes < 0)>;
+					OVF<TimerCode> = Compa0<TimerCode, DoTask, IdealRepeats, (RepeatTimes < 0), DoneCallback>;
 					if (Timer02)
 						TCCRA<TimerCode> = 0;
 					else
@@ -326,7 +334,7 @@ namespace TimersOneForAll
 		template <uint8_t TimerCode>
 		static volatile uint16_t SR2;
 		//Compa0表示自我重复，不切换
-		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr>
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, void (*DoneCallback)()>
 		void Compa0()
 		{
 			if (!--SR<TimerCode>)
@@ -334,14 +342,18 @@ namespace TimersOneForAll
 				if (InfiniteLr || --LR<TimerCode>)
 					SR<TimerCode> = SR1<TimerCode>;
 				else
+				{
 					TIMSK<TimerCode> = 0;
+					if (DoneCallback)
+						DoneCallback();
+				}
 				DoTask();
 			}
 		}
-		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf, void (*DoneCallback)()>
 		void Compa2();
 		//Compa1是小重复，结束后要切换到大重复，但是大重复有可能是COMPA也可能是OVF
-		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf, void (*DoneCallback)()>
 		void Compa1()
 		{
 			if (!--SR<TimerCode>)
@@ -351,13 +363,13 @@ namespace TimersOneForAll
 				else
 				{
 					SetOCRA<TimerCode>(Tcnt2<TimerCode>);
-					COMPA<TimerCode> = Compa2<TimerCode, DoTask, InfiniteLr, UseOvf>;
+					COMPA<TimerCode> = Compa2<TimerCode, DoTask, InfiniteLr, UseOvf, DoneCallback>;
 				}
 				SR<TimerCode> = SR2<TimerCode>;
 			}
 		}
 		//Compa2是大重复，结束后要执行动作，如果有重复次数还要切换到小重复
-		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf>
+		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, bool UseOvf, void (*DoneCallback)()>
 		void Compa2()
 		{
 			if (!--SR<TimerCode>)
@@ -369,16 +381,20 @@ namespace TimersOneForAll
 					else
 					{
 						SetOCRA<TimerCode>(Tcnt1<TimerCode>);
-						COMPA<TimerCode> = Compa1<TimerCode, DoTask, InfiniteLr, UseOvf>;
+						COMPA<TimerCode> = Compa1<TimerCode, DoTask, InfiniteLr, UseOvf, DoneCallback>;
 					}
 					SR<TimerCode> = SR1<TimerCode>;
 				}
 				else
+				{
 					TIMSK<TimerCode> = 0;
+					if (DoneCallback)
+						DoneCallback();
+				}
 				DoTask();
 			}
 		}
-		template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes = -1>
+		template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)()>
 		void SLRepeaterSet(uint32_t TCNT, uint8_t PrescalerBits)
 		{
 			TIMSK<TimerCode> = 0;
@@ -410,12 +426,12 @@ namespace TimersOneForAll
 					bool UseOvf = Tcnt2<TimerCode> == TM;
 					if (SR2<TimerCode>)
 					{
-						COMPA<TimerCode> = UseOvf ? Compa1<TimerCode, DoTask, InfiniteRepeat, true> : Compa1<TimerCode, DoTask, InfiniteRepeat, false>;
+						COMPA<TimerCode> = UseOvf ? Compa1<TimerCode, DoTask, InfiniteRepeat, true, DoneCallback> : Compa1<TimerCode, DoTask, InfiniteRepeat, false, DoneCallback>;
 						if (Tcnt2<TimerCode> == TM)
-							OVF<TimerCode> = UseOvf ? Compa2<TimerCode, DoTask, InfiniteRepeat, true> : Compa2<TimerCode, DoTask, InfiniteRepeat, false>;
+							OVF<TimerCode> = UseOvf ? Compa2<TimerCode, DoTask, InfiniteRepeat, true, DoneCallback> : Compa2<TimerCode, DoTask, InfiniteRepeat, false, DoneCallback>;
 					}
 					else
-						COMPA<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat>;
+						COMPA<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat, DoneCallback>;
 					SetTCNT<TimerCode>(0);
 					TIFR<TimerCode> = 255;
 					TIMSK<TimerCode> = 2;
@@ -423,7 +439,7 @@ namespace TimersOneForAll
 				else
 				{
 					SR<TimerCode> = SR1<TimerCode>;
-					OVF<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat>;
+					OVF<TimerCode> = Compa0<TimerCode, DoTask, InfiniteRepeat, DoneCallback>;
 					if (Timer02)
 						TCCRA<TimerCode> = 0;
 					else
