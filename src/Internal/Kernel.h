@@ -28,7 +28,7 @@ namespace TimersOneForAll
 	}
 	//取得上次调用StartTiming以来经过的毫秒数
 	template <uint8_t TimerCode>
-	static volatile uint16_t MillisecondsElapsed;
+	static volatile uint32_t MillisecondsElapsed;
 	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
 	void DoAfter();
 	//不要使用这个命名空间，除非你很清楚自己在做什么
