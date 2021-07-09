@@ -266,7 +266,7 @@ namespace TimersOneForAll
 	}
 	//生成循环数有限的方波。如不指定循环次数，默认无限循环
 	template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, void (*DoneCallback)() = nullptr>
-	void SquareWave(int16_t RepeatTimes = -1)
+	void SquareWave(int16_t RepeatTimes)
 	{
 		Internal::InternalSW<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, DoneCallback>(RepeatTimes);
 	}
