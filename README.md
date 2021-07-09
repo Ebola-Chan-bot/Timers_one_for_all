@@ -3,7 +3,7 @@
 
 音响、方波、延迟任务、定时重复，这些任务都需要应用开发板上的计时器才能完成。有时你甚至需要多个计时器同步运行，实现多线程任务。但是，当前Arduino社区并没有提供比较完善的计时器运行库。它们能够执行的任务模式非常有限，而且用户无法指定具体要使用哪个计时器。其结果就是，经常有一些使用计时器的库发生冲突，或者和用户自己的应用发生冲突。本项目旨在将计时器可能需要使用的所有功能在所有计时器上实现，最关键的是允许用户手动指定要是用的硬件计时器，避免冲突。
 
-**由于作者精力有限，目前本项目所有函数，仅时长参数可以在运行时动态设置，其它参数必须为编译期常量，作为模板参数。后续有空会实现更多可以动态设置参数的API。当然更欢迎上GitHub主页贡献Pull request。**
+**由于作者精力有限，目前本项目所有函数，仅时长、重复次数参数可以在运行时动态设置，其它参数必须为编译期常量，作为模板参数。后续有空会实现更多可以动态设置参数的API。当然更欢迎上GitHub主页贡献Pull request。**
 # 硬件计时器
 本库所有公开API的第一个模板参数，都是计时器的编号。不同计时器之间完全独立运行，互不干扰。用户必须在代码中手动指定要使用哪个硬件计时器来执行功能。不同CPU中的计时器数目和属性各不相同，此处以Arduino Mega开发板上常用的ATMega2560系列CPU为例：
 ## 计时器0
@@ -24,7 +24,7 @@ Make full use of all your hardware timers on your Arduino board.
 
 The only library you can choose any hardware timer you like to use in your timing function. Tones, square waves, delayed tasks, timed repetitive tasks are provided as building blocks for your own sophisticated multi-timer tasks. My library hides hardware register details for you.
 
-**Currently, for all APIs, only time length arguments can be specified at runtime. Other arguments are all template arguments, i.e., they must be known as constexprs at compiling time. I'll implement more runtime arguments if I have more free time. Pull requests are fully welcomed on my GitHub site.**
+**Currently, for all APIs, only time length and RepeatTimes arguments can be specified at runtime. Other arguments are all template arguments, i.e., they must be known as constexprs at compiling time. I'll implement more runtime arguments if I have more free time. Pull requests are fully welcomed on my GitHub site.**
 # Timers
 All public APIs are under namespace TimersOneForAll, and require TimerCode as the first template argument. TimerCode indicates which hardware timer you want to use. Hardware timers vary by CPUs. For ATMega2560 (Arduino Mega), there're 6 timers:
 ## Timer 0
@@ -65,6 +65,9 @@ void RepeatAfter();
 //Specify milliseconds at runtime. After all repeats done, DoneCallback is called.
 template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void RepeatAfter(uint16_t IntervalMilliseconds);
+//每隔指定毫秒数重复执行任务。重复次数若为负数，或不指定重复次数，则默认无限重复
+template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), void (*DoneCallback)() = nullptr>
+void RepeatAfter(int32_t RepeatTimes);
 
 //将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。
 //Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
@@ -104,6 +107,10 @@ void SquareWave();
 //Specify milliseconds at runtime. After all cycles done, DoneCallback is called.
 template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
 void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds);
+//允许运行时动态设置重复次数。重复次数不指定的话则为无限重复。
+//Specify RepeatTimes at runtime. Infinitely repeat if not specified.
+template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, void (*DoneCallback)() = nullptr>
+void SquareWave(int16_t RepeatTimes);
 
 //阻塞当前代码执行指定毫秒数
 //Block current code from running for DelayMilliseconds

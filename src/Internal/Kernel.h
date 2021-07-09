@@ -451,5 +451,61 @@ namespace TimersOneForAll
 			}
 		}
 #pragma endregion
+#pragma region 重复次数可变实现
+		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, void (*DoTask)(), void (*DoneCallback)()>
+		void SLRepeaterSet(int32_t RepeatTimes)
+		{
+			TIMSK<TimerCode> = 0;
+			if (RepeatTimes != 0)
+			{
+				constexpr uint32_t TM = TimerMax[TimerCode];
+				constexpr uint16_t IdealRepeats = TCNT / (TM - (TimerCode == 0));
+				constexpr bool Timer02 = TimerCode == 0 || TimerCode == 2;
+				if (Timer02)
+					TCCRB<TimerCode> = PrescalerBits;
+				else
+					TCCRA<TimerCode> = 0;
+				if (RepeatTimes > 0)
+					LR<TimerCode> = RepeatTimes;
+				if (IdealRepeats * TM < TCNT || TimerCode == 0) //Timer0的OVF不可用
+				{
+					if (Timer02)
+						TCCRA<TimerCode> = 2;
+					else
+						TCCRB<TimerCode> = PrescalerBits + 8;
+					constexpr uint16_t ActualRepeats = IdealRepeats + 1;
+					constexpr uint16_t Tcnt1 = TCNT / ActualRepeats;
+					constexpr uint16_t Tcnt2 = Tcnt1 + 1;
+					constexpr uint16_t SR1 = ActualRepeats * Tcnt2 - TCNT; //必大于0
+					constexpr uint16_t SR2 = TCNT - ActualRepeats * Tcnt1;
+					SetOCRA<TimerCode>(Tcnt1);
+					SR<TimerCode> = SR1;
+					if (SR2)
+					{
+						COMPA<TimerCode> = RepeatTimes < 0 ? Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, true, DoneCallback> : Compa1<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, false, DoneCallback>;
+						if (Tcnt2 == TM)
+							OVF<TimerCode> = RepeatTimes < 0 ? Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, true, DoneCallback> : Compa2<TimerCode, DoTask, Tcnt1, Tcnt2, SR1, SR2, false, DoneCallback>;
+					}
+					else
+						COMPA<TimerCode> = RepeatTimes < 0 ? Compa0<TimerCode, DoTask, SR1, true, DoneCallback> : Compa0<TimerCode, DoTask, SR1, false, DoneCallback>;
+					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
+					TIMSK<TimerCode> = 2;
+				}
+				else
+				{
+					SR<TimerCode> = IdealRepeats;
+					OVF<TimerCode> = RepeatTimes < 0 ? Compa0<TimerCode, DoTask, IdealRepeats, true, DoneCallback> : Compa0<TimerCode, DoTask, IdealRepeats, false, DoneCallback>;
+					if (Timer02)
+						TCCRA<TimerCode> = 0;
+					else
+						TCCRB<TimerCode> = PrescalerBits;
+					SetTCNT<TimerCode>(0);
+					TIFR<TimerCode> = 255;
+					TIMSK<TimerCode> = 1;
+				}
+			}
+		}
+#pragma endregion
 	}
 }
