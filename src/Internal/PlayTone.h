@@ -24,6 +24,6 @@ namespace TimersOneForAll
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
 		Gifts::EfficientDigitalToggle<PinCode>();
-		Internal::SLRepeaterSet<TimerCode, Gifts::EfficientDigitalToggle<PinCode>, uint32_t(FrequencyHz) * Milliseconds / 500, DoneCallback>(TS.TCNT, TS.PrescalerBits);
+		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, Gifts::EfficientDigitalToggle<PinCode>, DoneCallback>(uint32_t(FrequencyHz) * Milliseconds / 500);
 	}
 }

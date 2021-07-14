@@ -228,7 +228,7 @@ namespace TimersOneForAll
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
 						COMPA<TimerCode> = Gifts::EfficientDigitalWrite<PinCode, HIGH>;
-						COMPB<TimerCode> = RepeatTimes > 0 ? []
+						COMPB<TimerCode> = RepeatTimes > 0 ? (void(*)())[]
 						{
 							Gifts::EfficientDigitalWrite<PinCode, LOW>();
 							if (!--LR<TimerCode>)
