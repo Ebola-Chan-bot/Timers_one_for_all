@@ -76,11 +76,11 @@ void StartTiming();
 //获取自上次调用StartTiming以来所经过的毫秒数。
 //Get MillisecondsElapsed after the last call of StartTiming.
 template <uint8_t TimerCode>
-static volatile uint16_t MillisecondsElapsed;
+volatile uint32_t MillisecondsElapsed;
 //设为false可以暂停计时，重新设为true可继续计时
 //Set to false can freeze MillisecondsElapsed from being ticked by the timer (lock the variable only, timer still running). Set to true to continue timing.
 template <uint8_t TimerCode>
-static volatile bool Running;
+volatile bool Running;
 
 //在指定引脚上无限播放指定频率的音调
 //Play a tone of FrequencyHz on PinCode endlessly.
