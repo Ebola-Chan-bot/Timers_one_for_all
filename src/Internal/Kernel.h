@@ -3,34 +3,6 @@
 //#include "Debugger.h"
 namespace TimersOneForAll
 {
-	//礼品API：虽然跟本库主题不合，但本库实际上用到了，并且觉得你可能也会感兴趣
-	namespace Gifts
-	{
-		//快速翻转引脚电平，比digitalWrite性能更高
-		template <uint8_t PinCode>
-		void EfficientDigitalToggle()
-		{
-			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
-			const uint8_t BitMask = digitalPinToBitMask(PinCode);
-			*PinPort ^= BitMask;
-		}
-		//快速设置引脚电平，比digitalWrite性能更高
-		template <uint8_t PinCode, bool IsHigh>
-		void EfficientDigitalWrite()
-		{
-			volatile uint8_t *const PinPort = portOutputRegister(digitalPinToPort(PinCode));
-			const uint8_t BitMask = digitalPinToBitMask(PinCode);
-			if (IsHigh)
-				*PinPort |= BitMask;
-			else
-				*PinPort &= ~BitMask;
-		}
-	}
-	//取得上次调用StartTiming以来经过的毫秒数
-	template <uint8_t TimerCode>
-	static volatile uint32_t MillisecondsElapsed;
-	template <uint8_t TimerCode, uint16_t AfterMilliseconds, void (*DoTask)()>
-	void DoAfter();
 	//不要使用这个命名空间，除非你很清楚自己在做什么
 	namespace Internal
 	{
@@ -88,13 +60,13 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 硬件寄存器
 		template <uint8_t TimerCode>
-		static volatile uint8_t &TCCRA;
+		extern volatile uint8_t &TCCRA;
 		template <uint8_t TimerCode>
-		static volatile uint8_t &TCCRB;
+		extern volatile uint8_t &TCCRB;
 		template <uint8_t TimerCode>
-		static volatile uint8_t &TIMSK;
+		extern volatile uint8_t &TIMSK;
 		template <uint8_t TimerCode>
-		static volatile uint8_t &TIFR;
+		extern volatile uint8_t &TIFR;
 		//TCNT有可能是uint8_t或uint16_t类型，因此不能直接取引用
 		template <uint8_t TimerCode>
 		uint16_t GetTCNT();
@@ -109,103 +81,17 @@ namespace TimersOneForAll
 		template <uint8_t TimerCode>
 		void SetOCRB(uint16_t OCRB);
 		template <uint8_t TimerCode>
-		static void (*volatile OVF)();
+		void (*volatile OVF)();
 		template <uint8_t TimerCode>
-		static void (*volatile COMPA)();
+		void (*volatile COMPA)();
 		template <uint8_t TimerCode>
-		static void (*volatile COMPB)();
-#define TimerSpecialize(Code)                      \
-	template <>                                    \
-	volatile uint8_t &TCCRA<Code> = TCCR##Code##A; \
-	template <>                                    \
-	volatile uint8_t &TCCRB<Code> = TCCR##Code##B; \
-	template <>                                    \
-	volatile uint8_t &TIMSK<Code> = TIMSK##Code;   \
-	template <>                                    \
-	volatile uint8_t &TIFR<Code> = TIFR##Code;     \
-	template <>                                    \
-	uint16_t GetTCNT<Code>()                       \
-	{                                              \
-		return TCNT##Code;                         \
-	}                                              \
-	template <>                                    \
-	void SetTCNT<Code>(uint16_t TCNT)              \
-	{                                              \
-		TCNT##Code = TCNT;                         \
-	}                                              \
-	template <>                                    \
-	uint16_t GetOCRA<Code>()                       \
-	{                                              \
-		return OCR##Code##A;                       \
-	}                                              \
-	template <>                                    \
-	void SetOCRA<Code>(uint16_t OCRA)              \
-	{                                              \
-		OCR##Code##A = OCRA;                       \
-	}                                              \
-	template <>                                    \
-	uint16_t GetOCRB<Code>()                       \
-	{                                              \
-		return OCR##Code##B;                       \
-	}                                              \
-	template <>                                    \
-	void SetOCRB<Code>(uint16_t OCRB)              \
-	{                                              \
-		OCR##Code##B = OCRB;                       \
-	}                                              \
-	ISR(TIMER##Code##_COMPA_vect)                  \
-	{                                              \
-		COMPA<Code>();                             \
-	}                                              \
-	ISR(TIMER##Code##_COMPB_vect)                  \
-	{                                              \
-		COMPB<Code>();                             \
-	}
-#ifdef TCNT0
-		TimerSpecialize(0);
-//Timer0的溢出中断被内置millis()函数占用了，无法使用
-#endif
-#ifdef TCNT1
-		TimerSpecialize(1);
-		ISR(TIMER1_OVF_vect)
-		{
-			OVF<1>();
-		}
-#endif
-#ifdef TCNT2
-		TimerSpecialize(2);
-		ISR(TIMER2_OVF_vect)
-		{
-			OVF<2>();
-		}
-#endif
-#ifdef TCNT3
-		TimerSpecialize(3);
-		ISR(TIMER3_OVF_vect)
-		{
-			OVF<3>();
-		}
-#endif
-#ifdef TCNT4
-		TimerSpecialize(4);
-		ISR(TIMER4_OVF_vect)
-		{
-			OVF<4>();
-		}
-#endif
-#ifdef TCNT5
-		TimerSpecialize(5);
-		ISR(TIMER5_OVF_vect)
-		{
-			OVF<5>();
-		}
-#endif
+		void (*volatile COMPB)();
 #pragma endregion
 #pragma region 通用内核
 		template <uint8_t TimerCode>
-		static volatile uint32_t SR;
+		volatile uint32_t SR;
 		template <uint8_t TimerCode>
-		static volatile int32_t LR;
+		volatile int32_t LR;
 #pragma endregion
 #pragma region 全模板实现
 		//Compa0表示自我重复，不切换
@@ -326,13 +212,13 @@ namespace TimersOneForAll
 #pragma endregion
 #pragma region 时长可变实现
 		template <uint8_t TimerCode>
-		static volatile uint16_t Tcnt1;
+		volatile uint16_t Tcnt1;
 		template <uint8_t TimerCode>
-		static volatile uint16_t Tcnt2;
+		volatile uint16_t Tcnt2;
 		template <uint8_t TimerCode>
-		static volatile uint16_t SR1;
+		volatile uint16_t SR1;
 		template <uint8_t TimerCode>
-		static volatile uint16_t SR2;
+		volatile uint16_t SR2;
 		//Compa0表示自我重复，不切换
 		template <uint8_t TimerCode, void (*DoTask)(), bool InfiniteLr, void (*DoneCallback)()>
 		void Compa0()

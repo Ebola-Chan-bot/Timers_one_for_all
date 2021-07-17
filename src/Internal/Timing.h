@@ -4,7 +4,10 @@ namespace TimersOneForAll
 {
 	//设为false可以暂停计时，重新设为true可继续计时
 	template <uint8_t TimerCode>
-	static volatile bool Running;
+	volatile bool Running;
+	//取得上次调用StartTiming以来经过的毫秒数
+	template <uint8_t TimerCode>
+	volatile uint32_t MillisecondsElapsed;
 	namespace Internal
 	{
 		template <uint8_t TimerCode>
