@@ -10,18 +10,18 @@ namespace TimersOneForAll
 	volatile uint32_t MillisecondsElapsed;
 	namespace Internal
 	{
-		template <uint8_t TimerCode>
+		template <uint8_t TimerCode, uint16_t MillsecondsPerTick>
 		void MEAdd()
 		{
 			if (Running<TimerCode>)
-				MillisecondsElapsed<TimerCode> ++;
+				MillisecondsElapsed<TimerCode> += MillsecondsPerTick;
 		}
 	}
 	//设置当前为零时刻进行计时。从MillisecondsElapsed变量读取经过的毫秒数
-	template <uint8_t TimerCode>
+	template <uint8_t TimerCode, uint16_t MillisecondsPerTick = 1>
 	void StartTiming()
 	{
-		RepeatAfter<TimerCode, 1, Internal::MEAdd<TimerCode>>();
+		RepeatAfter<TimerCode, MillisecondsPerTick, Internal::MEAdd<TimerCode, MillisecondsPerTick>>();
 		MillisecondsElapsed<TimerCode> = 0;
 		Running<TimerCode> = true;
 	}

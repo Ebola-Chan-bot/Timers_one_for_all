@@ -69,9 +69,9 @@ void RepeatAfter(uint16_t IntervalMilliseconds);
 template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), void (*DoneCallback)() = nullptr>
 void RepeatAfter(int32_t RepeatTimes);
 
-//将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。
+//将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。可选设置MillisecondsPerTick，控制计时单位是多少毫秒
 //Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
-template <uint8_t TimerCode>
+template <uint8_t TimerCode, uint16_t MillisecondsPerTick = 1>
 void StartTiming();
 //获取自上次调用StartTiming以来所经过的毫秒数。
 //Get MillisecondsElapsed after the last call of StartTiming.
