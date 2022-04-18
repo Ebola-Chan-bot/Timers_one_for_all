@@ -1,7 +1,8 @@
-
 充分利用开发板上所有的计时器。
 
 音响、方波、延迟任务、定时重复，这些任务都需要应用开发板上的计时器才能完成。有时你甚至需要多个计时器同步运行，实现多线程任务。但是，当前Arduino社区并没有提供比较完善的计时器运行库。它们能够执行的任务模式非常有限，而且用户无法指定具体要使用哪个计时器。其结果就是，经常有一些使用计时器的库发生冲突，或者和用户自己的应用发生冲突。本项目旨在将计时器可能需要使用的所有功能在所有计时器上实现，最关键的是允许用户手动指定要是用的硬件计时器，避免冲突。
+
+*您必须为您的 IDE 启用 C++17。打开“%LOCALAPPDATA%\Arduino15\packages\arduino\hardware\avr\1.8.3\platform.txt”并将参数“-std=gnu++11”更改为-std=gnu++17。*
 
 **由于作者精力有限，目前本项目所有函数，仅时长、重复次数参数可以在运行时动态设置，其它参数必须为编译期常量，作为模板参数。后续有空会实现更多可以动态设置参数的API。当然更欢迎上GitHub主页贡献Pull request。**
 # 硬件计时器
@@ -23,6 +24,8 @@
 Make full use of all your hardware timers on your Arduino board. 
 
 The only library you can choose any hardware timer you like to use in your timing function. Tones, square waves, delayed tasks, timed repetitive tasks are provided as building blocks for your own sophisticated multi-timer tasks. My library hides hardware register details for you.
+
+*You must enable C++17 for your IDE. Open "%LOCALAPPDATA%\Arduino15\packages\arduino\hardware\avr\1.8.3\platform.txt" and change the argument "-std=gnu++11" to -std=gnu++17.*
 
 **Currently, for all APIs, only time length and RepeatTimes arguments can be specified at runtime. Other arguments are all template arguments, i.e., they must be known as constexprs at compiling time. I'll implement more runtime arguments if I have more free time. Pull requests are fully welcomed on my GitHub site.**
 # Timers
