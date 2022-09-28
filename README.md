@@ -48,7 +48,7 @@ If you aren't using ATMega2560 CPU series, you may or may not be able to use thi
 //在指定的毫秒数后触发一个计时器中断，调用你的函数。
 //Call your function with a timer interrupt after given milliseconds
 template <uint8_t TimerCode, 
-uint16_t AfterMilliseconds,//If set to 0, DoTask will be called directly in this function call. Hardware timer won't be disturbed.
+uint16_t AfterMilliseconds,
 void (*DoTask)()>
 void DoAfter();
 //允许运行时动态设置毫秒数
