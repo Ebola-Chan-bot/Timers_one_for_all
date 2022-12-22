@@ -1,5 +1,4 @@
 #include "Kernel.h"
-using namespace TimersOneForAll::Internal;
 #define TimerSpecialize(Code)                      \
 	template <>                                    \
 	volatile uint8_t &TCCRA<Code> = TCCR##Code##A; \
@@ -47,9 +46,13 @@ using namespace TimersOneForAll::Internal;
 	{                                              \
 		COMPB<Code>();                             \
 	}
+namespace TimersOneForAll
+{
+	namespace Internal
+	{
 #ifdef TCNT0
 		TimerSpecialize(0);
-//Timer0的溢出中断被内置millis()函数占用了，无法使用
+// Timer0的溢出中断被内置millis()函数占用了，无法使用
 #endif
 #ifdef TCNT1
 		TimerSpecialize(1);
@@ -86,3 +89,5 @@ using namespace TimersOneForAll::Internal;
 			OVF<5>();
 		}
 #endif
+	}
+}

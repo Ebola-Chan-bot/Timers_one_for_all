@@ -21,6 +21,10 @@
 
 如果你使用的开发板并非ATMega2560系列的CPU，也可能可以使用本库。具体需要参考你的CPU数据表，看是否具有兼容的硬件计时器。
 
+# 常见故障排除
+
+如果链接时遇到`undefined reference to TIMSK`类似的错误，请检查你选择的开发板是否正确，以及是否使用了你的开发板所不支持的计时器。
+
 Make full use of all your hardware timers on your Arduino board. 
 
 The only library you can choose any hardware timer you like to use in your timing function. Tones, square waves, delayed tasks, timed repetitive tasks are provided as building blocks for your own sophisticated multi-timer tasks. My library hides hardware register details for you.
@@ -43,6 +47,11 @@ This timer is also 8-bit, but different from timer 0 at 3 aspects:
 Moreover, builtin `analogWrite()` and `tone()` may dynamically occupy any of the timers listed above. You'll have to handle potential conflicts if you want to use these builtins.
 
 If you aren't using ATMega2560 CPU series, you may or may not be able to use this library. Refer to your datasheet to see if it has compatible hardware timer configurations.
+
+# Common troubleshooting
+
+If you encounter an error similar to `undefined reference to TIMSK` when linking, please check whether you have selected the correct board and whether you are using a timer that is not supported by your board.
+
 # API参考 API Reference
 ```C++
 //在指定的毫秒数后触发一个计时器中断，调用你的函数。
