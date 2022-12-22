@@ -56,30 +56,25 @@ If you encounter an error similar to `undefined reference to TIMSK` when linking
 ```C++
 //在指定的毫秒数后触发一个计时器中断，调用你的函数。
 //Call your function with a timer interrupt after given milliseconds
-template <uint8_t TimerCode, 
-uint16_t AfterMilliseconds,
-void (*DoTask)()>
-void DoAfter();
+template <uint8_t TimerCode, uint16_t AfterMilliseconds>
+void DoAfter(void (*DoTask)());
 //允许运行时动态设置毫秒数
 //Specify milliseconds at runtime
-template <uint8_t TimerCode, void (*DoTask)()>
-void DoAfter(uint16_t AfterMilliseconds);
+template <uint8_t TimerCode>
+void DoAfter(uint16_t AfterMilliseconds, void (*DoTask)());
 
 //每隔指定的毫秒数，无限重复调用你的函数。第一次调用也将在那个毫秒数之后发生。
 //Repetitively and infinitely call your function with a timer interrupt for each IntervalMilliseconds. The first interrupt happens after IntervalMilliseconds, too.
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)()>
-void RepeatAfter();
-//仅重复有限次数，重复全部结束后触发DoneCallback回调
-//Repeat for only RepeatTimes. After all repeats done, DoneCallback is called.
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void RepeatAfter();
+template <uint8_t TimerCode, uint16_t IntervalMilliseconds, int32_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
+void RepeatAfter(void (*DoTask)())
 //允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。重复全部结束后触发DoneCallback回调
 //Specify milliseconds at runtime. After all repeats done, DoneCallback is called.
-template <uint8_t TimerCode, void (*DoTask)(), int32_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void RepeatAfter(uint16_t IntervalMilliseconds);
-//每隔指定毫秒数重复执行任务。重复次数若为负数，或不指定重复次数，则默认无限重复
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoTask)(), void (*DoneCallback)() = nullptr>
-void RepeatAfter(int32_t RepeatTimes);
+template <uint8_t TimerCode, int32_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
+void RepeatAfter(uint16_t IntervalMilliseconds, void (*DoTask)())
+//仅重复有限次数，重复全部结束后触发DoneCallback回调
+//Repeat for only RepeatTimes. After all repeats done, DoneCallback is called.
+template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoneCallback)() = nullptr>
+void RepeatAfter(int32_t RepeatTimes, void (*DoTask)())
 
 //将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。可选设置MillisecondsPerTick，控制计时单位是多少毫秒
 //Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
@@ -137,4 +132,12 @@ void Delay(uint16_t DelayMilliseconds);
 //Abort all tasks assigned to TimerCode. Other timers won't be affected.
 template <uint8_t TimerCode>
 void ShutDown();
+//暂停指定计时器上的任务
+//Pause the task on the specified timer
+template <uint8_t TimerCode>
+void Pause();
+//继续指定计时器上的任务。如果继续一个未处于暂停状态的计时器，将产生未定义行为。
+//Continue the task on the specified timer. If you continue a timer that is not in a paused state, undefined behavior occurs.
+template <uint8_t TimerCode>
+void Continue();
 ```

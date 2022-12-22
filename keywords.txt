@@ -1,12 +1,14 @@
 # Datatypes (KEYWORD1)
 
 # Functions (KEYWORD2)
-DoAfter	KEYWORD2
+DoAfter		KEYWORD2
 RepeatAfter	KEYWORD2
 StartTiming	KEYWORD2
 PlayTone	KEYWORD2
 SquareWave	KEYWORD2
 ShutDown	KEYWORD2
+Pause		KEYWORD2
+Continue	KEYWORD2
 # Structures (KEYWORD3)
 
 # Constants (LITERAL1)
