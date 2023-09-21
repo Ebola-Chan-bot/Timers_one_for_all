@@ -19,10 +19,10 @@ namespace TimersOneForAll
 	}
 	// 设置当前为零时刻进行计时。从MillisecondsElapsed变量读取经过的毫秒数
 	template <uint8_t TimerCode, uint16_t MillisecondsPerTick = 1>
-	void StartTiming()
+	void StartTiming(uint32_t TimeShift = 0)
 	{
 		RepeatAfter<TimerCode, MillisecondsPerTick>(Internal::MEAdd<TimerCode, MillisecondsPerTick>);
-		MillisecondsElapsed<TimerCode> = 0;
+		MillisecondsElapsed<TimerCode> = TimeShift;
 		Running<TimerCode> = true;
 	}
 }
