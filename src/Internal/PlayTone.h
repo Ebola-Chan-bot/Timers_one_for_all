@@ -9,7 +9,6 @@ namespace TimersOneForAll
 	void PlayTone()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
-		DigitalToggle<PinCode>();
 		Internal::TimerTask<TimerCode> = DigitalToggle<PinCode>;
 		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, -1, nullptr>();
 	}
@@ -18,7 +17,6 @@ namespace TimersOneForAll
 	void PlayTone()
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
-		DigitalToggle<PinCode>();
 		Internal::TimerTask<TimerCode> = DigitalToggle<PinCode>;
 		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, uint32_t(FrequencyHz) * Milliseconds / 500, DoneCallback>();
 	}
@@ -27,7 +25,6 @@ namespace TimersOneForAll
 	void PlayTone(uint16_t Milliseconds)
 	{
 		constexpr Internal::TimerSetting TS = Internal::GetTimerSetting(TimerCode, 500.f / FrequencyHz);
-		DigitalToggle<PinCode>();
 		Internal::TimerTask<TimerCode> = DigitalToggle<PinCode>;
 		Internal::SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, DoneCallback>(uint32_t(FrequencyHz) * Milliseconds / 500);
 	}

@@ -102,15 +102,16 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
+				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
 					SR<TimerCode> = SmallRepeats;
 				else
 				{
 					TIMSK<TimerCode> = 0;
+					TIFR<TimerCode> = 255;
 					if (DoneCallback)
 						DoneCallback();
 				}
-				TimerTask<TimerCode>();
 			}
 		}
 		template <uint8_t TimerCode, uint16_t Tcnt1, uint16_t Tcnt2, uint16_t SR1, uint16_t SR2, bool InfiniteLr, void (*DoneCallback)()>
@@ -137,6 +138,7 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
+				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
 				{
 					if (Tcnt2 < TimerMax[TimerCode])
@@ -151,10 +153,10 @@ namespace TimersOneForAll
 				else
 				{
 					TIMSK<TimerCode> = 0;
+					TIFR<TimerCode> = 255;
 					if (DoneCallback)
 						DoneCallback();
 				}
-				TimerTask<TimerCode>();
 			}
 		}
 		template <uint8_t TimerCode, uint32_t TCNT, uint8_t PrescalerBits, int32_t RepeatTimes, void (*DoneCallback)()>
@@ -225,6 +227,7 @@ namespace TimersOneForAll
 		template <uint8_t TimerCode, bool InfiniteLr, void (*DoneCallback)()>
 		void Compa0()
 		{
+			TimerTask<TimerCode>();
 			if (!--SR<TimerCode>)
 			{
 				if (InfiniteLr || --LR<TimerCode>)
@@ -232,10 +235,10 @@ namespace TimersOneForAll
 				else
 				{
 					TIMSK<TimerCode> = 0;
+					TIFR<TimerCode> = 255;
 					if (DoneCallback)
 						DoneCallback();
 				}
-				TimerTask<TimerCode>();
 			}
 		}
 		template <uint8_t TimerCode, bool InfiniteLr, bool UseOvf, void (*DoneCallback)()>
@@ -262,6 +265,7 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
+				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
 				{
 					if (UseOvf)
@@ -276,10 +280,10 @@ namespace TimersOneForAll
 				else
 				{
 					TIMSK<TimerCode> = 0;
+					TIFR<TimerCode> = 255;
 					if (DoneCallback)
 						DoneCallback();
 				}
-				TimerTask<TimerCode>();
 			}
 		}
 		template <uint8_t TimerCode, int32_t RepeatTimes, void (*DoneCallback)()>
