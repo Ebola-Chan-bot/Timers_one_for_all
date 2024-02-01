@@ -102,13 +102,17 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
-				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
+				{
 					SR<TimerCode> = SmallRepeats;
+					TimerTask<TimerCode>();
+				}
 				else
 				{
 					TIMSK<TimerCode> = 0;
 					TIFR<TimerCode> = 255;
+					TimerTask<TimerCode>();
+					// TimerTask必须放在中间。如果放前面，TimerTask就不能布置新的计时器任务（DoAfter）；如果放后面，就不能保证DoneCallback在最后执行。
 					if (DoneCallback)
 						DoneCallback();
 				}
@@ -138,7 +142,6 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
-				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
 				{
 					if (Tcnt2 < TimerMax[TimerCode])
@@ -149,11 +152,13 @@ namespace TimersOneForAll
 					else
 						TIMSK<TimerCode> = 2;
 					SR<TimerCode> = SR1;
+					TimerTask<TimerCode>();
 				}
 				else
 				{
 					TIMSK<TimerCode> = 0;
 					TIFR<TimerCode> = 255;
+					TimerTask<TimerCode>();
 					if (DoneCallback)
 						DoneCallback();
 				}
@@ -231,11 +236,15 @@ namespace TimersOneForAll
 			if (!--SR<TimerCode>)
 			{
 				if (InfiniteLr || --LR<TimerCode>)
+				{
 					SR<TimerCode> = SR1<TimerCode>;
+					TimerTask<TimerCode>();
+				}
 				else
 				{
 					TIMSK<TimerCode> = 0;
 					TIFR<TimerCode> = 255;
+					TimerTask<TimerCode>();
 					if (DoneCallback)
 						DoneCallback();
 				}
@@ -265,7 +274,6 @@ namespace TimersOneForAll
 		{
 			if (!--SR<TimerCode>)
 			{
-				TimerTask<TimerCode>();
 				if (InfiniteLr || --LR<TimerCode>)
 				{
 					if (UseOvf)
@@ -276,11 +284,13 @@ namespace TimersOneForAll
 						COMPA<TimerCode> = Compa1<TimerCode, InfiniteLr, UseOvf, DoneCallback>;
 					}
 					SR<TimerCode> = SR1<TimerCode>;
+					TimerTask<TimerCode>();
 				}
 				else
 				{
 					TIMSK<TimerCode> = 0;
 					TIFR<TimerCode> = 255;
+					TimerTask<TimerCode>();
 					if (DoneCallback)
 						DoneCallback();
 				}
