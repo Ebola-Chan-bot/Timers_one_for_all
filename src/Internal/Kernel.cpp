@@ -1,4 +1,5 @@
 #include "Kernel.h"
+#ifdef ARDUINO_ARCH_AVR
 #define TimerSpecialize(Code)                      \
 	template <>                                    \
 	volatile uint8_t &TCCRA<Code> = TCCR##Code##A; \
@@ -91,3 +92,7 @@ namespace TimersOneForAll
 #endif
 	}
 }
+#endif
+#ifdef ARDUINO_ARCH_SAM
+
+#endif

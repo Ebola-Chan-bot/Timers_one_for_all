@@ -1,11 +1,11 @@
 #pragma once
 #include <Arduino.h>
-// #include "Debugger.h"
 namespace TimersOneForAll
 {
 	// 不要使用这个命名空间，除非你很清楚自己在做什么
 	namespace Internal
 	{
+#ifdef ARDUINO_ARCH_AVR
 #pragma region 预分频器
 		struct TimerSetting
 		{
@@ -409,6 +409,9 @@ namespace TimersOneForAll
 			}
 		}
 #pragma endregion
+#endif
+#ifdef ARDUINO_ARCH_SAM
+
+#endif
 	}
 }
-void TestFun();
