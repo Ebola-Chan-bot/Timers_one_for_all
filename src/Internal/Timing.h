@@ -1,6 +1,6 @@
 #pragma once
-#include "Kernel.h"
-namespace TimersOneForAll
+#include "RepeatAfter.h"
+namespace Timers_one_for_all
 {
 	// 设为false可以暂停计时，重新设为true可继续计时
 	template <uint8_t TimerCode>

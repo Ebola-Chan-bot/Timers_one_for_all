@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-namespace TimersOneForAll
+namespace Timers_one_for_all
 {
 	// 不要使用这个命名空间，除非你很清楚自己在做什么
 	namespace Internal
@@ -59,14 +59,13 @@ namespace TimersOneForAll
 		}
 #pragma endregion
 #pragma region 硬件寄存器
-		template <uint8_t TimerCode>
-		extern volatile uint8_t &TCCRA;
-		template <uint8_t TimerCode>
-		extern volatile uint8_t &TCCRB;
-		template <uint8_t TimerCode>
-		extern volatile uint8_t &TIMSK;
-		template <uint8_t TimerCode>
-		extern volatile uint8_t &TIFR;
+#define RegisterT(Name)      \
+	template <uint8_t Timer> \
+	extern volatile uint8_t &Name;
+		RegisterT(TCCRA);
+		RegisterT(TCCRB);
+		RegisterT(TIMSK);
+		RegisterT(TIFR);
 		// TCNT有可能是uint8_t或uint16_t类型，因此不能直接取引用
 		template <uint8_t TimerCode>
 		uint16_t GetTCNT();
@@ -411,7 +410,76 @@ namespace TimersOneForAll
 #pragma endregion
 #endif
 #ifdef ARDUINO_ARCH_SAM
+#define NUM_TIMERS 9
+		struct TimerSetting
+		{
+			uint32_t Clock;
+			uint32_t RC;
+		};
+		TimerSetting GetTimerSetting(uint16_t Milliseconds);
+		class DueTimer
+		{
+		protected:
+			// Represents the timer id (index for the array of Timer structs)
+			const unsigned short timer;
 
+			// Stores the object timer frequency
+			// (allows to access current timer period and frequency):
+			static double _frequency[NUM_TIMERS];
+
+			// Picks the best clock to lower the error
+			static uint8_t bestClock(double frequency, uint32_t &retRC);
+
+			// Make Interrupt handlers friends, so they can use callbacks
+			friend void ::TC0_Handler(void);
+			friend void ::TC1_Handler(void);
+			friend void ::TC2_Handler(void);
+			friend void ::TC3_Handler(void);
+			friend void ::TC4_Handler(void);
+			friend void ::TC5_Handler(void);
+			friend void ::TC6_Handler(void);
+			friend void ::TC7_Handler(void);
+			friend void ::TC8_Handler(void);
+
+			struct Timer
+			{
+				Tc *tc;
+				uint32_t channel;
+				IRQn_Type irq;
+			};
+
+			// Store timer configuration (static, as it's fixed for every object)
+			static const Timer Timers[NUM_TIMERS];
+			static void (*callbacks[NUM_TIMERS])();
+
+		public:
+			static DueTimer getAvailable(void);
+
+			DueTimer(unsigned short _timer);
+			DueTimer &attachInterrupt(void (*isr)());
+			DueTimer &detachInterrupt(void);
+			DueTimer &start(long microseconds = -1);
+			DueTimer &stop(void);
+			DueTimer &setFrequency(double frequency);
+			DueTimer &setPeriod(unsigned long microseconds);
+
+			double getFrequency(void) const;
+			long getPeriod(void) const;
+		};
+
+		// Just to call Timer.getAvailable instead of Timer::getAvailable() :
+		extern DueTimer Timer;
+
+		extern DueTimer Timer1;
+		// Fix for compatibility with Servo library
+		extern DueTimer Timer0;
+		extern DueTimer Timer2;
+		extern DueTimer Timer3;
+		extern DueTimer Timer4;
+		extern DueTimer Timer5;
+		extern DueTimer Timer6;
+		extern DueTimer Timer7;
+		extern DueTimer Timer8;
 #endif
 	}
 }

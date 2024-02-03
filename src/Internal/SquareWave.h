@@ -1,8 +1,7 @@
 #pragma once
 #include "Kernel.h"
-#include <LowLevelQuickDigitalIO.h>
-using namespace LowLevelQuickDigitalIO;
-namespace TimersOneForAll
+#include <Low_level_quick_digital_IO.hpp>
+namespace Timers_one_for_all
 {
 	namespace Internal
 	{
@@ -12,12 +11,12 @@ namespace TimersOneForAll
 		void SquareWaveToHigh()
 		{
 			DoAfter<TimerCode, HighMilliseconds>(SquareWaveToLow<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr, DoneCallback>);
-			DigitalWrite<PinCode, HIGH>();
+			Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 		}
 		template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow()
 		{
-			DigitalWrite<PinCode, LOW>();
+			Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 			if (InfiniteLr || --LR<TimerCode>)
 				DoAfter<TimerCode, LowMilliseconds>(SquareWaveToHigh<TimerCode, PinCode, HighMilliseconds, LowMilliseconds, InfiniteLr, DoneCallback>);
 			else if (DoneCallback)
@@ -26,7 +25,7 @@ namespace TimersOneForAll
 		template <uint8_t PinCode, void (*DoneCallback)()>
 		void OneShotSWDone()
 		{
-			DigitalWrite<PinCode, LOW>();
+			Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 			if (DoneCallback)
 				DoneCallback();
 		}
@@ -42,15 +41,15 @@ namespace TimersOneForAll
 					DoneCallback();
 				break;
 			case 1:
-				DigitalWrite<PinCode, HIGH>();
+				Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 				DoAfter<TimerCode, HighMilliseconds>(OneShotSWDone<PinCode, DoneCallback>);
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
-					DigitalWrite<PinCode, HIGH>();
-					TimerTask<TimerCode> = DigitalToggle<PinCode>;
+					Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
+					TimerTask<TimerCode> = Low_level_quick_digital_IO::DigitalToggle<PinCode>;
 					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1, DoneCallback>();
 				}
 				else
@@ -75,10 +74,10 @@ namespace TimersOneForAll
 						SetOCRA<TimerCode>(TryTS.TCNT);
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
-						COMPA<TimerCode> = DigitalWrite<PinCode, HIGH>;
+						COMPA<TimerCode> = Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>;
 						COMPB<TimerCode> = []
 						{
-							DigitalWrite<PinCode, LOW>();
+							Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
 							{
 								TIMSK<TimerCode> = 0;
@@ -86,7 +85,7 @@ namespace TimersOneForAll
 									DoneCallback();
 							}
 						};
-						DigitalWrite<PinCode, HIGH>();
+						Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
 						TIFR<TimerCode> = 255;
 						TIMSK<TimerCode> = 6;
@@ -106,12 +105,12 @@ namespace TimersOneForAll
 		void SquareWaveToHigh()
 		{
 			DoAfter<TimerCode>(HM<TimerCode>, SquareWaveToLow<TimerCode, PinCode, InfiniteLr, DoneCallback>);
-			DigitalWrite<PinCode, HIGH>();
+			Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 		}
 		template <uint8_t TimerCode, uint8_t PinCode, bool InfiniteLr, void (*DoneCallback)()>
 		void SquareWaveToLow()
 		{
-			DigitalWrite<PinCode, LOW>();
+			Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 			if (InfiniteLr || --LR<TimerCode>)
 				DoAfter<TimerCode>(LM<TimerCode>, SquareWaveToHigh<TimerCode, PinCode, InfiniteLr, DoneCallback>);
 			else if (DoneCallback)
@@ -129,15 +128,15 @@ namespace TimersOneForAll
 					DoneCallback();
 				break;
 			case 1:
-				DigitalWrite<PinCode, HIGH>();
+				Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 				DoAfter<TimerCode>(HighMilliseconds, OneShotSWDone<PinCode, DoneCallback>);
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
-					DigitalWrite<PinCode, HIGH>();
-					TimerTask<TimerCode> = DigitalToggle<PinCode>;
+					Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
+					TimerTask<TimerCode> = Low_level_quick_digital_IO::DigitalToggle<PinCode>;
 					SLRepeaterSet<TimerCode, (RepeatTimes < 0) ? -1 : RepeatTimes * 2 - 1, DoneCallback>(TS.TCNT, TS.PrescalerBits);
 				}
 				else
@@ -162,10 +161,10 @@ namespace TimersOneForAll
 						SetOCRA<TimerCode>(TryTS.TCNT);
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
-						COMPA<TimerCode> = DigitalWrite<PinCode, HIGH>;
+						COMPA<TimerCode> = Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>;
 						COMPB<TimerCode> = []
 						{
-							DigitalWrite<PinCode, LOW>();
+							Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 							if (RepeatTimes > 0 && !--LR<TimerCode>)
 							{
 								TIMSK<TimerCode> = 0;
@@ -173,7 +172,7 @@ namespace TimersOneForAll
 									DoneCallback();
 							}
 						};
-						DigitalWrite<PinCode, HIGH>();
+						Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 						SetTCNT<TimerCode>(0);
 						TIFR<TimerCode> = 255;
 						TIMSK<TimerCode> = 6;
@@ -199,15 +198,15 @@ namespace TimersOneForAll
 					DoneCallback();
 				break;
 			case 1:
-				DigitalWrite<PinCode, HIGH>();
+				Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 				DoAfter<TimerCode, HighMilliseconds>(OneShotSWDone<PinCode, DoneCallback>);
 				break;
 			default:
 				if (HighMilliseconds == LowMilliseconds)
 				{
 					constexpr TimerSetting TS = GetTimerSetting(TimerCode, HighMilliseconds);
-					DigitalWrite<PinCode, HIGH>();
-					TimerTask<TimerCode> = DigitalToggle<PinCode>;
+					Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
+					TimerTask<TimerCode> = Low_level_quick_digital_IO::DigitalToggle<PinCode>;
 					SLRepeaterSet<TimerCode, TS.TCNT, TS.PrescalerBits, DoneCallback>(RepeatTimes < 0 ? -1 : RepeatTimes * 2 - 1);
 				}
 				else
@@ -232,10 +231,10 @@ namespace TimersOneForAll
 						SetOCRA<TimerCode>(TryTS.TCNT);
 						SetOCRB<TimerCode>(TryTS.TCNT * HighMilliseconds / FullCycle);
 						LR<TimerCode> = RepeatTimes;
-						COMPA<TimerCode> = DigitalWrite<PinCode, HIGH>;
+						COMPA<TimerCode> = Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>;
 						COMPB<TimerCode> = RepeatTimes > 0 ? (void (*)())[]
 						{
-							DigitalWrite<PinCode, LOW>();
+							Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>();
 							if (!--LR<TimerCode>)
 							{
 								TIMSK<TimerCode> = 0;
@@ -243,8 +242,8 @@ namespace TimersOneForAll
 									DoneCallback();
 							}
 						}
-														   : DigitalWrite<PinCode, LOW>;
-														   DigitalWrite<PinCode, HIGH>();
+														   : Low_level_quick_digital_IO::DigitalWrite<PinCode, LOW>;
+														   Low_level_quick_digital_IO::DigitalWrite<PinCode, HIGH>();
 														   SetTCNT<TimerCode>(0);
 														   TIFR<TimerCode> = 255;
 														   TIMSK<TimerCode> = 6;

@@ -1,6 +1,6 @@
 #pragma once
 #include "Kernel.h"
-namespace TimersOneForAll
+namespace Timers_one_for_all
 {
 	namespace Internal
 	{
