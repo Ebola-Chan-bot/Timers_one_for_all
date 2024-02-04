@@ -1,11 +1,14 @@
-#include <Timers_one_for_all.hpp>
-using namespace Timers_one_for_all;
-//上传该示例之前，请确保你的PC准备好收发串口信号
+template<typename T>
+void F1(T A,int B)
+{}
+template<typename T>
+void F1(T A,int B,int C)
+{}
 void setup()
 {
-  constexpr auto TI=TimerInfo[1].CounterMax;
+  F1(1,2,3);
+  F1(1,2);
+  delay()
 }
 void loop()
-{
-}
-//上传后，可以从PC上向串口发送任意单字节，每次发送都会收到一个16位整数，指示经过的毫秒数。达到65535毫秒后会归零。
+{}
