@@ -417,6 +417,22 @@ namespace Timers_one_for_all
 			uint32_t RC;
 		};
 		TimerSetting GetTimerSetting(uint16_t Milliseconds);
+		constexpr uint32_t u32Min(uint32_t A, uint32_t B)
+		{
+			return A < B ? A : B;
+		}
+		constexpr uint32_t MaxPrecision = VARIANT_MCK / 2000;
+		template <uint16_t Milliseconds>
+		class GetTimerSetting_s
+		{
+			static constexpr uint32_t Ticks = MaxPrecision * Milliseconds;
+			static constexpr uint32_t Clock = u32Min(__builtin_ctz(Ticks) >> 1, 3);
+
+		public:
+			static constexpr TimerSetting TS = {Clock, Ticks >> (Clock << 1)};
+		};
+		void SetRepeater(const TimerSetting &TS, void (*Callback)(), uint8_t Timer);
+		void Shutdown(uint8_t Timer);
 		class DueTimer
 		{
 		protected:
@@ -482,4 +498,5 @@ namespace Timers_one_for_all
 		extern DueTimer Timer8;
 #endif
 	}
+	extern void (*TC_Handlers[9])();
 }

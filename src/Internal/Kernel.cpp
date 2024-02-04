@@ -51,7 +51,7 @@ namespace Timers_one_for_all
 {
 	namespace Internal
 	{
-#ifdef TCNT0
+#if defined(TCNT0) && !defined(TOFA_DISABLE_0)
 		TimerSpecialize(0);
 // Timer0的溢出中断被内置millis()函数占用了，无法使用
 #endif
@@ -61,19 +61,19 @@ namespace Timers_one_for_all
 	{                            \
 		OVF<Code>();             \
 	}
-#ifdef TCNT1
+#if defined(TCNT1) && !defined(TOFA_DISABLE_1)
 		TimerSpecializeIsr(1);
 #endif
-#ifdef TCNT2
+#if defined(TCNT2) && !defined(TOFA_DISABLE_2)
 		TimerSpecializeIsr(2);
 #endif
-#ifdef TCNT3
+#if defined(TCNT3) && !defined(TOFA_DISABLE_3)
 		TimerSpecializeIsr(3);
 #endif
-#ifdef TCNT4
+#if defined(TCNT4) && !defined(TOFA_DISABLE_4)
 		TimerSpecializeIsr(4);
 #endif
-#ifdef TCNT5
+#if defined(TCNT5) && !defined(TOFA_DISABLE_5)
 		TimerSpecializeIsr(5);
 #endif
 	}
@@ -81,19 +81,78 @@ namespace Timers_one_for_all
 #endif
 #ifdef ARDUINO_ARCH_SAM
 using namespace Timers_one_for_all::Internal;
-TimerSetting GetTimerSetting(uint16_t Milliseconds)
+TimerSetting Timers_one_for_all::Internal::GetTimerSetting(uint16_t Milliseconds)
 {
-	constexpr uint32_t TicksPerSeconds[] = {VARIANT_MCK / 2, VARIANT_MCK / 8, VARIANT_MCK / 32, VARIANT_MCK / 128};
-	constexpr uint64_t MaxTicks1000 = UINT32_MAX * 1000ULL;
-	constexpr uint32_t MaxMilliseconds=MaxTicks1000/TicksPerSeconds[3];
-	for (uint8_t a = 0; a < 4; ++a)
-	{
-		// TPS*M<UINT32_MAX*1000
-		if (TicksPerSeconds[a] * (uint64_t)Milliseconds <= MaxTicks1000)
-		{
+	const uint32_t Ticks = MaxPrecision * Milliseconds;
+	const uint32_t Clock = u32Min(__builtin_ctz(Ticks) >> 1, 3);
+	return {Clock, Ticks >> (Clock << 1)};
+}
+constexpr struct
+{
+	Tc *tc;
+	uint32_t channel;
+	IRQn_Type irq;
+} Timers[NUM_TIMERS] = {
+	{TC0, 0, TC0_IRQn},
+	{TC0, 1, TC1_IRQn},
+	{TC0, 2, TC2_IRQn},
+	{TC1, 0, TC3_IRQn},
+	{TC1, 1, TC4_IRQn},
+	{TC1, 2, TC5_IRQn},
+	{TC2, 0, TC6_IRQn},
+	{TC2, 1, TC7_IRQn},
+	{TC2, 2, TC8_IRQn},
+};
+void (*TC_Handlers[9])();
+#ifndef TOFA_DISABLE_0
+void TC0_Handler() { TC_Handlers[0](); }
+#endif
+#ifndef TOFA_DISABLE_1
+void TC1_Handler() { TC_Handlers[1](); }
+#endif
+#ifndef TOFA_DISABLE_2
+void TC2_Handler() { TC_Handlers[2](); }
+#endif
+#ifndef TOFA_DISABLE_3
+void TC3_Handler() { TC_Handlers[3](); }
+#endif
+#ifndef TOFA_DISABLE_4
+void TC4_Handler() { TC_Handlers[4](); }
+#endif
+#ifndef TOFA_DISABLE_5
+void TC5_Handler() { TC_Handlers[5](); }
+#endif
+#ifndef TOFA_DISABLE_6
+void TC6_Handler() { TC_Handlers[6](); }
+#endif
+#ifndef TOFA_DISABLE_7
+void TC7_Handler() { TC_Handlers[7](); }
+#endif
+#ifndef TOFA_DISABLE_8
+void TC8_Handler() { TC_Handlers[8](); }
+#endif
+void Timers_one_for_all::Internal::SetRepeater(const TimerSetting &TS, void (*Callback)(), uint8_t Timer)
+{
+	TC_Handlers[Timer] = Callback;
+	pmc_set_writeprotect(false);
+	const auto &T = Timers[Timer];
+	pmc_enable_periph_clk(T.irq);
 
-		}
-	}
+	// Set up the Timer in waveform mode which creates a PWM
+	// in UP mode with automatic trigger on RC Compare
+	// and sets it up with the determined internal clock as clock input.
+	TC_Configure(T.tc, T.channel, TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TS.Clock);
+	// Reset counter and fire interrupt when RC value is matched:
+	TC_SetRC(T.tc, T.channel, TS.RC);
+	// Enable the RC Compare Interrupt...
+	T.tc->TC_CHANNEL[T.channel].TC_IER = TC_IER_CPCS;
+	// ... and disable all others.
+	T.tc->TC_CHANNEL[T.channel].TC_IDR = ~TC_IER_CPCS;
+
+	NVIC_ClearPendingIRQ(T.irq);
+	NVIC_EnableIRQ(T.irq);
+
+	TC_Start(T.tc, T.channel);
 }
 const DueTimer::Timer DueTimer::Timers[NUM_TIMERS] = {
 	{TC0, 0, TC0_IRQn},
