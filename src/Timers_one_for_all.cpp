@@ -1,17 +1,24 @@
 #include "Timers_one_for_all.hpp"
 namespace Timers_one_for_all
 {
-	Exception AllocateTimer(uint8_t &Timer)
+	namespace Advanced
 	{
-		Timer = NumTimers - 1;
-		do
+		Exception AllocateTimer(uint8_t &Timer)
 		{
-			if (!TimerBusy[Timer])
+			Timer = NumTimers - 1;
+			do
 			{
-				TimerBusy[Timer] = true;
-				return Exception::Successful_operation;
-			}
-		} while (--Timer < NumTimers);
-		return Exception::No_idle_timer;
+				if (!TimerBusy[Timer])
+				{
+					TimerBusy[Timer] = true;
+					return Exception::Successful_operation;
+				}
+			} while (--Timer < NumTimers);
+			return Exception::No_idle_timer;
+		}
+		Exception StartTiming(uint8_t Timer)
+		{
+			
+		}
 	}
 }
