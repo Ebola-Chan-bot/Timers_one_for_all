@@ -60,9 +60,37 @@ namespace Timers_one_for_all
 			{UINT32_MAX + 1, 4, {2, 8, 32, 128}},
 #endif
 	};
-	//适用于希望追求高性能的高级用户
+	// 适用于希望追求高性能的高级用户
 	namespace Advanced
 	{
+#ifdef ARDUINO_ARCH_SAM
+		constexpr struct
+		{
+			Tc *tc;
+			uint32_t channel;
+			IRQn_Type irq;
+		} Timers[NUM_TIMERS] = {
+			{TC0, 0, TC0_IRQn},
+			{TC0, 1, TC1_IRQn},
+			{TC0, 2, TC2_IRQn},
+			{TC1, 0, TC3_IRQn},
+			{TC1, 1, TC4_IRQn},
+			{TC1, 2, TC5_IRQn},
+			{TC2, 0, TC6_IRQn},
+			{TC2, 1, TC7_IRQn},
+			{TC2, 2, TC8_IRQn},
+		};
+		// 执行任何Advanced方法之前必须先进行全局初始化一次
+		inline void GlobalInitialize()
+		{
+			PMC->PMC_WPMR = PMC_WPMR_WPKEY_VALUE;
+		}
+		//使用任何计时器之前必须初始化该计时器一次
+		inline void TimerInitialize(uint8_t Timer)
+		{
+			
+		}
+#endif
 		void Shutdown(uint8_t Timer);
 		Exception AnalogWrite(uint8_t Timer, uint8_t Pin, float Value);
 		Exception AnalogWrite(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, float Value);
