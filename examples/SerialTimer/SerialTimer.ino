@@ -9,6 +9,7 @@ void setup()
   F1(1,2,3);
   F1(1,2);
   delay()
+  analogWrite()
 }
 void loop()
 {}

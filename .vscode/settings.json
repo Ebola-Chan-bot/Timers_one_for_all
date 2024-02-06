@@ -64,6 +64,9 @@
 		"cstdarg": "cpp",
 		"ctime": "cpp",
 		"*.tcc": "cpp",
-		"cinttypes": "cpp"
+		"cinttypes": "cpp",
+		"array": "cpp",
+		"clocale": "cpp",
+		"random": "cpp"
 	}
 }
