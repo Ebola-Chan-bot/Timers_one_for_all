@@ -67,6 +67,9 @@
 		"cinttypes": "cpp",
 		"array": "cpp",
 		"clocale": "cpp",
-		"random": "cpp"
+		"random": "cpp",
+		"unordered_map": "cpp",
+		"fstream": "cpp",
+		"tuple": "cpp"
 	}
 }

@@ -1,15 +1,13 @@
 #include "Timers_one_for_all.hpp"
 #include <array>
 #include <memory>
-struct TimerState
+void DecayedTOI(Timers_one_for_all::Advanced::TimerState &State)
 {
-	void (*InterruptServiceRoutine)(TimerState &State);
-	const Timers_one_for_all::Advanced::TimerInfo *Timer;
-	size_t OverflowCount;
-} TimerStates[Timers_one_for_all::Advanced::NumTimers];
+	State.Arguments.TimingState.OverflowCount++;
+}
 #ifdef ARDUINO_ARCH_AVR
 #define TIMERISR(Index) \
-	ISR(TIMER##Index##_OVF_vect) { TimerStates[Index].InterruptServiceRoutine(TimerStates[Index]); }
+	ISR(TIMER##Index##_OVF_vect) { Timers_one_for_all::Advanced::TimerStates[Index].InterruptServiceRoutine(Timers_one_for_all::Advanced::TimerStates[Index]); }
 #ifndef TOFA_DISABLE_0
 TIMERISR(0);
 #endif
@@ -30,19 +28,24 @@ TIMERISR(4);
 TIMERISR(5);
 #endif
 #endif
-void TimingOverflowIsr(TimerState &State)
+void TimingOverflowIsr(Timers_one_for_all::Advanced::TimerState &State)
 {
-	const Timers_one_for_all::Advanced::TimerInfo *Timer = State.Timer;
-	const uint8_t PD = Timer->TCCRB;
-	if (PD + 1 < Timer->NumPrescaleDivisors)
-		Timer->SetCounter((1 << Timer->CounterBytes * 8) * Timer->PrescaleDivisors[PD] / Timer->PrescaleDivisors[Timer->TCCRB = PD + 1]);
-	else
-		State.OverflowCount++;
+	auto &TS = State.Arguments.TimingState;
+	const Timers_one_for_all::Advanced::TimerInfo *Timer = TS.Timer;
+	TS.OverflowCount++;
+	const uint8_t NextPC = Timer->TCCRB + 1;
+	if (NextPC >= Timer->NumPrescaleClocks)
+		State.InterruptServiceRoutine = DecayedTOI;
+	else if (TS.OverflowCount * Timer->PrescaleClocks[NextPC - 1].Divisor >= Timer->PrescaleClocks[NextPC].Divisor)
+	{
+		Timer->TCCRB = NextPC;
+		TS.OverflowCount = 1;
+	}
 }
 #endif
 #ifdef ARDUINO_ARCH_SAM
 #define TIMERISR(Index) \
-	void TC##Index##_Handler() { TimerStates[Index].InterruptServiceRoutine(TimerStates[Index]); }
+	void TC##Index##_Handler() { Timers_one_for_all::Advanced::TimerStates[Index].InterruptServiceRoutine(Timers_one_for_all::Advanced::TimerStates[Index]); }
 #ifndef TOFA_DISABLE_0
 TIMERISR(0);
 #endif
@@ -70,14 +73,20 @@ TIMERISR(7);
 #ifndef TOFA_DISABLE_8
 TIMERISR(8);
 #endif
-void TimingOverflowIsr(TimerState &State)
+void TimingOverflowIsr(Timers_one_for_all::Advanced::TimerState &State)
 {
-	const Timers_one_for_all::Advanced::TimerInfo *Timer = State.Timer;
-	const uint8_t PD = Timer->TCCRB;
-	if (PD + 1 < Timer->NumPrescaleDivisors)
-		Timer->SetCounter((1 << Timer->CounterBytes * 8) * Timer->PrescaleDivisors[PD] / Timer->PrescaleDivisors[Timer->TCCRB = PD + 1]);
-	else
-		State.OverflowCount++;
+	auto &TS = State.Arguments.TimingState;
+	if (++TS.OverflowCount >= 4)
+	{
+		RwReg &TC_CMR = TS.Timer->Channel.TC_CMR;
+		if (TC_CMR & 0b11 < 3)
+		{
+			TC_CMR++;
+			TS.OverflowCount = 1;
+		}
+		else
+			State.InterruptServiceRoutine = DecayedTOI;
+	}
 }
 #endif
 namespace Timers_one_for_all
@@ -87,26 +96,23 @@ namespace Timers_one_for_all
 #ifdef ARDUINO_ARCH_AVR
 		uint16_t TimerInfo::ReadCounter() const
 		{
-			if (CounterBytes == 1)
+			if (CounterBits == 8)
 				return *(uint8_t *)TCNT;
 			else
 				return *(uint16_t *)TCNT;
 		}
-		void TimerInfo::SetCounter(uint16_t Counter) const
+		void TimerInfo::ClearCounter() const
 		{
-			if (CounterBytes == 1)
-				*(uint8_t *)TCNT = Counter;
+			if (CounterBits == 8)
+				*(uint8_t *)TCNT = 0;
 			else
-				*(uint16_t *)TCNT = Counter;
+				*(uint16_t *)TCNT = 0;
 		}
 #endif
 #ifdef ARDUINO_ARCH_SAM
 		void TimerInitialize(uint8_t Timer)
 		{
 			auto &T = Timers[Timer];
-			T.tc->TC_CHANNEL[T.channel].TC_IER = TC_IER_CPCS;
-			T.tc->TC_CHANNEL[T.channel].TC_IDR = ~TC_IER_CPCS;
-			NVIC_ClearPendingIRQ(T.irq);
 			NVIC_EnableIRQ(T.irq);
 		}
 #endif
@@ -123,20 +129,21 @@ namespace Timers_one_for_all
 			} while (--Timer < NumTimers);
 			return Exception::No_idle_timer;
 		}
-		Exception StartTiming(uint8_t Timer)
+		void StartTiming(uint8_t Timer)
 		{
 			const TimerInfo &T = Timers[Timer];
 #ifdef ARDUINO_ARCH_AVR
-			T.TIMSK = 0;
-			T.TCCRA = 0;
 			T.TCCRB = 0;
-			TimerStates[Timer] = {.InterruptServiceRoutine = TimingOverflowIsr, .Timer = &T, .OverflowCount = 0};
-			T.SetCounter(0);
-			T.TIFR = 255;
-			T.TIMSK = 1;
+			T.CtcRegister = 0;
+			T.ClearCounter();
+			T.TIFR = UINT8_MAX;
+			T.TIMSK = TimerInfo::TOIE;
+			TimerStates[Timer] = {.InterruptServiceRoutine = TimingOverflowIsr, .Arguments.TimingState = {.Timer = &T, .OverflowCount = 0}};
 #endif
 #ifdef ARDUINO_ARCH_SAM
-
+			NVIC_ClearPendingIRQ(T.irq);
+			TimerStates[Timer] = {.InterruptServiceRoutine = TimingOverflowIsr, .Arguments.TimingState = {.Timer = &T, .OverflowCount = 0}};
+			T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK1, .TC_IER = TC_IER_COVFS, .TC_IDR = ~TC_IDR_COVFS};
 #endif
 		}
 	}
@@ -151,19 +158,19 @@ namespace Timers_one_for_all
 	Exception StartTiming(uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
-		E = Advanced::StartTiming(Timer);
+		Advanced::StartTiming(Timer);
 		TOFA_FreeTimerStuff;
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
-		E = Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		Advanced::Tone(Timer, NumPins, Pins, Frequency);
 		TOFA_FreeTimerStuff;
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
-		E = Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		Advanced::Tone(Timer, NumPins, Pins, Frequency);
 		TOFA_FreeTimerStuff;
 	}
 }
