@@ -1,5 +1,6 @@
-#include <chrono>
+#include<Cpp_Standard_Library.h>
+#include <utility>
 void setup() {
-  constexpr int R = std::chrono::minutes(1) / std::chrono::seconds(1);
+ using T=std::make_index_sequence<10>;
 }
 void loop() {}
