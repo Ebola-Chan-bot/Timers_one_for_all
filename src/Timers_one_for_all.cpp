@@ -182,26 +182,66 @@ namespace Timers_one_for_all
 				TS.InterruptServiceRoutine = DoAfterIsr;
 			}
 		}
-		void UnlimitedRepeatIsr(TimerState &TS)
+		void RepeatIsr(TimerState &TS)
 		{
-			TS.UserIsr;
+			if (TS.Repeat < InfiniteRepeat && !--TS.Repeat)
+			{
+#ifdef ARDUINO_ARCH_AVR
+				// AVR架构必须手动终止计时
+				TS.Timer.TIMSK = 0;
+#endif
+				// SAM架构可以自动终止计时
+				if (TS.AutoAlloFree)
+					TS.Free = true;
+				TS.UserIsr;
+				if (TS.DoneCallback)
+					TS.DoneCallback();
+			}
+			else
+				TS.UserIsr;
 		}
-		void UnlimitedRepeatOverflowIsr(TimerState &TS)
+		void RepeatOverflowIsr(TimerState &TS)
 		{
 			const TimerInfo &TI = TS.Timer;
 #ifdef ARDUINO_ARCH_AVR
-			TI.CtcRegister ^= TI.CtcMask;
-			TI.TIMSK = TimerInfo::TOIE;
+			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+			{
+				TI.CtcRegister ^= TI.CtcMask;
+				TI.TIMSK = TimerInfo::TOIE;
+				TS.OverflowLeft = TS.OverflowCount;
+				TS.InterruptServiceRoutine = RepeatOverflow;
+				TS.UserIsr();
+			}
+			else
+			{
+				TI.TIMSK = 0;
+				if (TS.AutoAlloFree)
+					TS.Free = true;
+				TS.UserIsr();
+				if (TS.DoneCallback)
+					TS.DoneCallback();
+			}
 #endif
 #ifdef ARDUINO_ARCH_SAM
-			TcChannel &Channel = TI.Channel;
-			Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
-			Channel.TC_IDR = TC_IDR_CPCS;
+			if (TS.Repeat)
+			{
+				TcChannel &Channel = TI.Channel;
+				Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
+				Channel.TC_IDR = TC_IDR_CPCS;
+				TS.InterruptServiceRoutine = RepeatOverflow;
+				TS.UserIsr();
+			}
+			else
+			{
+				if (TS.AutoAlloFree)
+					TS.Free = true;
+				TS.UserIsr();
+				if (TS.DoneCallback)
+					TS.DoneCallback();
+			}
 #endif
-			TS.InterruptServiceRoutine = UnlimitedRepeatOverflow;
-			TS.UserIsr();
 		}
-		void UnlimitedRepeatOverflow(TimerState &TS)
+		void RepeatOverflow(TimerState &TS)
 		{
 			if (!--TS.OverflowLeft)
 			{
@@ -212,11 +252,17 @@ namespace Timers_one_for_all
 #endif
 #ifdef ARDUINO_ARCH_SAM
 				TcChannel &Channel = TI.Channel;
-				Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK4;
+				if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+				{
+					Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK4;
+					TS.OverflowLeft = TS.OverflowCount;
+				}
+				else
+					Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_CPCDIS | TC_CMR_CPCSTOP | TC_CMR_TCCLKS_TIMER_CLOCK4;
 				Channel.TC_IER = TC_IER_CPCS;
 #endif
 			}
-			TS.InterruptServiceRoutine = UnlimitedRepeatOverflowIsr;
+			TS.InterruptServiceRoutine = RepeatOverflowIsr;
 		}
 	}
 	void FreeTimer(uint8_t Timer)
@@ -231,15 +277,18 @@ namespace Timers_one_for_all
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::StartTiming(Timer);
+		return E;
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		return E;
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		return E;
 	}
 }
