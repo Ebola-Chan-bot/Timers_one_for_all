@@ -10,8 +10,10 @@
 // #define TOFA_DISABLE_7
 // #define TOFA_DISABLE_8
 // 被禁用的硬件计时器之后的计时器，其在本库中的编号会依次前移。在这种情况下，硬件计时器号与软件计时器号将不再一一对应。例如，如果禁用了计时器4，则硬件计时器5~8将对应软件计时器4~7。
-#include <Arduino.h>
+#include <Low_level_quick_digital_IO.hpp>
 #include <chrono>
+#include <vector>
+#include <Arduino.h>
 namespace Timers_one_for_all
 {
 	enum class Exception
@@ -25,7 +27,7 @@ namespace Timers_one_for_all
 	};
 	// 将Infinite参数设为此值则为无限重复
 	constexpr size_t InfiniteRepeat = std::numeric_limits<size_t>::max();
-	// 适用于希望追求高性能的高级用户
+	// Advanced命名空间适用于经验丰富并愿意花时间优化性能的高级用户。普通用户不应使用此命名空间内的方法，因其功能划分粒度较高，稳健性差，需要用户对底层细节有较多了解，不易使用。
 	namespace Advanced
 	{
 		using Ticks = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
@@ -144,18 +146,16 @@ namespace Timers_one_for_all
 		struct TimerState
 		{
 			void (*InterruptServiceRoutine)(TimerState &State);
-			size_t OverflowCount;
 			size_t OverflowLeft;
-			const TimerInfo &Timer;
+			size_t OverflowCount;
 			union
 			{
 				void (*UserIsr)();
-				struct
-				{
-
-				} SquareWave;
+				size_t OverflowLeft2;
 			};
+			const TimerInfo &Timer;
 			size_t Repeat;
+			std::vector<uint8_t> Pins;
 			void (*DoneCallback)();
 			// 记录计时器是否可被AllocateTimer分配
 			bool Free = true;
@@ -180,7 +180,7 @@ namespace Timers_one_for_all
 		 	));
 		}
 		template <typename _Rep, typename _Period>
-		void Delay(uint8_t Timer, const std::chrono::duration<_Rep, _Period> &Duration)
+		void Delay(uint8_t Timer, std::chrono::duration<_Rep, _Period> Duration)
 		{
 			StartTiming(Timer);
 			std::chrono::duration<_Rep, _Period> TimeElapsed;
@@ -192,7 +192,7 @@ namespace Timers_one_for_all
 		void DoAfterIsr(TimerState &TS);
 		void DoAfterOverflow(TimerState &TS);
 		template <typename _Rep, typename _Period>
-		Exception DoAfter(uint8_t Timer, void (*Do)(), const std::chrono::duration<_Rep, _Period> &After)
+		Exception DoAfter(uint8_t Timer, void (*Do)(), std::chrono::duration<_Rep, _Period> After)
 		{
 			const TimerInfo &T = Timers[Timer];
 			uint8_t Clock;
@@ -264,7 +264,7 @@ namespace Timers_one_for_all
 		void RepeatIsr(TimerState &TS);
 		void RepeatOverflow(TimerState &TS);
 		template <typename _Rep, typename _Period>
-		Exception PeriodicDoRepeat(uint8_t Timer, const std::chrono::duration<_Rep, _Period> &Period, void (*Do)(), size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
+		Exception PeriodicDoRepeat(uint8_t Timer, std::chrono::duration<_Rep, _Period> Period, void (*Do)(), size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
 		{
 			TimerState &TS = TimerStates[Timer];
 			const TimerInfo &T = Timers[Timer];
@@ -335,38 +335,114 @@ namespace Timers_one_for_all
 			TS.DoneCallback = DoneCallback;
 			return Exception::Successful_operation;
 		}
+		void SquareWaveIsr(TimerState &TS);
+		void SquareWaveOverflow(TimerState &TS);
 		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t Pin, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
+		Exception SquareWave(uint8_t Timer, uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
+		{
+			TimerState &TS = TimerStates[Timer];
+			const TimerInfo &T = Timers[Timer];
+			uint8_t Clock;
+			const std::chrono::duration<_Rep, _Period> Cycle = High + Low;
+#ifdef ARDUINO_ARCH_AVR
+			for (Clock = 0; Clock < T.NumPrescaleClocks; ++Clock)
+				if (Period < T.PrescaleClocks[Clock].TicksPerOverflow)
+					break;
+			if (Clock < T.NumPrescaleClocks)
+			{
+				const size_t OCRA = Period / T.PrescaleClocks[Clock].TicksPerCounter;
+				if (!OCRA)
+				{
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					return Exception::Timing_too_short;
+				}
+				T.TCCRB = Clock;
+				T.CtcRegister |= T.CtcMask; // CtcRegister和TCCRB可能是同一个寄存器，所以用|=防止覆盖
+				T.ClearCounter();
+				T.SetOCRA(OCRA);
+				T.TIFR = UINT8_MAX;
+				T.TIMSK = TimerInfo::OCIEA;
+				TS.InterruptServiceRoutine = RepeatIsr;
+			}
+			else
+			{
+				Clock = T.NumPrescaleClocks - 1;
+				// 计时太长，需要积累几个Overflow
+				T.CtcRegister = 0;
+				T.TCCRB = Clock;
+				// 由于TCCRB和CtcRegister可能是同一个寄存器，上述两行的顺序不能改变
+				T.ClearCounter();
+				T.SetOCRA((Period % T.PrescaleClocks[Clock].TicksPerOverflow).count());
+				T.TIFR = UINT8_MAX;
+				T.TIMSK = TimerInfo::TOIE;
+				TS.InterruptServiceRoutine = RepeatOverflow;
+				TS.OverflowCount = TS.OverflowLeft = Period / T.PrescaleClocks[Clock].TicksPerOverflow;
+			}
+#endif
+#ifdef ARDUINO_ARCH_SAM
+			for (Clock = 0; Clock < 4; ++Clock)
+				if (Cycle < PrescaleClocks[Clock].TicksPerOverflow)
+					break;
+			const PrescaleClock &PC = PrescaleClocks[Clock];
+			if (Clock < 4)
+			{
+				const size_t TC_RA = (Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin) ? High : Low) / PC.TicksPerCounter;
+				if (!TC_RA)
+				{
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					return Exception::Timing_too_short;
+				}
+				NVIC_ClearPendingIRQ(T.irq);
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RA = TC_RA, .TC_RC = Cycle / PC.TicksPerCounter, .TC_IER = TC_IER_CPCS | TC_IER_CPAS, .TC_IDR = ~(TC_IDR_CPCS | TC_IDR_CPAS)};
+				TS.InterruptServiceRoutine = SquareWaveIsr;
+			}
+			else
+			{
+				const std::chrono::duration<_Rep, _Period> TC_RA = Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin) ? High : Low;
+				NVIC_ClearPendingIRQ(T.irq);
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RA = (TC_RA % PC.TicksPerOverflow).count(), .TC_RC = (Cycle % PC.TicksPerOverflow).count(), .TC_IER = TC_IER_COVFS, .TC_IDR = ~TC_IDR_COVFS};
+				TS.InterruptServiceRoutine = RepeatOverflow;
+				TS.OverflowCount = 0;
+				TS.OverflowLeft = TC_RA / PC.TicksPerOverflow;
+				TS.OverflowLeft2 = Cycle / PC.TicksPerOverflow;
+				TS.InterruptServiceRoutine = SquareWaveOverflow;
+			}
+#endif
+			TS.Pins.assign({Pin});
+			TS.Repeat = Repeat;
+			TS.DoneCallback = DoneCallback;
+			return Exception::Successful_operation;
+		}
+		template <typename _Rep, typename _Period>
+		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low)
 		{
 		}
 		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low)
+		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat)
 		{
 		}
 		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, size_t Repeat)
-		{
-		}
-		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, size_t Repeat, void (*DoneCallback)())
+		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, void (*DoneCallback)())
 		{
 		}
 		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency);
 		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration)
+		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration)
 		{
 		}
 		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, void (*DoneCallback)())
+		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)())
 		{
 		}
 		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency);
 		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration)
+		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration)
 		{
 		}
 		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, void (*DoneCallback)())
+		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)())
 		{
 		}
 	}
@@ -387,6 +463,7 @@ namespace Timers_one_for_all
 	Advanced::GlobalInitialize();                       \
 	Advanced::TimerInitialize(Timer);
 #endif
+	// 此方法返回的Timer需要手动FreeTimer
 	Exception StartTiming(uint8_t &Timer);
 	template <typename _Rep, typename _Period>
 	inline Exception GetTiming(uint8_t Timer, std::chrono::duration<_Rep, _Period> &TimeElapsed)
@@ -397,21 +474,23 @@ namespace Timers_one_for_all
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception Delay(const std::chrono::duration<_Rep, _Period> &Duration)
+	inline Exception Delay(std::chrono::duration<_Rep, _Period> Duration)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Delay(Duration);
 		return E;
 	}
+	// 此方法返回的Timer在任务完成后自动释放。你也可以在预定时间之前提前手动释放，则任务取消。
 	template <typename _Rep, typename _Period>
-	inline Exception DoAfter(void (*Do)(), const std::chrono::duration<_Rep, _Period> &After, uint8_t &Timer)
+	inline Exception DoAfter(void (*Do)(), std::chrono::duration<_Rep, _Period> After, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		E = Advanced::DoAfter(Timer, Do, After);
 		return E;
 	}
+	// 如果指定了有限的重复次数（包括0次），此方法返回的Timer在所有重复结束后自动释放。你也可以在预定时间之前提前手动释放，则后续任务取消。第1次重复也需要等待Period时间才会执行。
 	template <typename _Rep, typename _Period>
-	inline Exception PeriodicDoRepeat(const std::chrono::duration<_Rep, _Period> &Period, void (*Do)(), uint8_t &Timer, size_t Repeat = Advanced::TimerState::InfiniteRepeat, void (*DoneCallback)() = nullptr)
+	inline Exception PeriodicDoRepeat(std::chrono::duration<_Rep, _Period> Period, void (*Do)(), uint8_t &Timer, size_t Repeat = Advanced::TimerState::InfiniteRepeat, void (*DoneCallback)() = nullptr)
 	{
 		if (Repeat)
 		{
@@ -425,29 +504,31 @@ namespace Timers_one_for_all
 			return Exception::Repeat_is_0;
 		}
 	}
+	// 此处的Repeat参数是电平反转的次数，即1代表电平反转一次，2才是一个完整的周期。注意第1次反转也需要等待High或Low时间后才发生，取决于当前电平状态。
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t Pin, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, uint8_t &Timer, size_t Repeat = InfiniteRepeat, void (*DoneCallback)())
+	inline Exception SquareWave(uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer, size_t Repeat = InfiniteRepeat, void (*DoneCallback)())
 	{
 		TOFA_AllocateTimerStuff;
-		Advanced::SquareWave(Timer, Pin, High, Low, Repeat, DoneCallback);
+		pinMode(Pin, OUTPUT);
+		E = dvanced::SquareWave(Timer, Pin, High, Low, Repeat, DoneCallback);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, uint8_t &Timer)
+	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::SquareWave(Timer, NumPins, Pins, High, Low);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, size_t Repeat, uint8_t &Timer)
+	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::SquareWave(Timer, NumPins, Pins, High, Low, Repeat);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, const std::chrono::duration<_Rep, _Period> &High, const std::chrono::duration<_Rep, _Period> &Low, size_t Repeat, void (*DoneCallback)(), uint8_t &Timer)
+	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, void (*DoneCallback)(), uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::SquareWave(Timer, NumPins, Pins, High, Low, Repeat, DoneCallback);
@@ -455,14 +536,14 @@ namespace Timers_one_for_all
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer);
 	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, uint8_t &Timer)
+	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, void (*DoneCallback)(), uint8_t &Timer)
+	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)(), uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration, DoneCallback);
@@ -470,14 +551,14 @@ namespace Timers_one_for_all
 	}
 	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer);
 	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, uint8_t &Timer)
+	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, const std::chrono::duration<_Rep, _Period> &Duration, void (*DoneCallback)(), uint8_t &Timer)
+	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)(), uint8_t &Timer)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration, DoneCallback);
