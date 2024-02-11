@@ -154,141 +154,122 @@ namespace Timers_one_for_all
 			TimerStates[Timer].OverflowCount = 0;
 			TimerStates[Timer].InterruptServiceRoutine = TimingOverflowIsr;
 		}
-		void DoAfterIsr(TimerState &TS)
-		{
-#ifdef ARDUINO_ARCH_AVR
-			// AVR架构必须手动终止计时
-			TS.Timer.TIMSK = 0;
-#endif
-			// SAM架构可以自动终止计时
-			if (TS.AutoAlloFree)
-				TS.Free = true;
-			TS.UserIsr();
-		}
-		void DoAfterOverflow(TimerState &TS)
-		{
-			if (!--TS.OverflowLeft)
-			{
-#ifdef ARDUINO_ARCH_AVR
-				TS.Timer.TIMSK = TimerInfo::OCIEA;
-#endif
-#ifdef ARDUINO_ARCH_SAM
-				TcChannel &Channel = TS.Timer.Channel;
-				Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_CPCSTOP | TC_CMR_CPCDIS | TC_CMR_TCCLKS_TIMER_CLOCK4;
-				// 注意不能覆盖TC_RC，所以只能一个一个赋值
-				Channel.TC_IER = TC_IER_CPCS;
-				Channel.TC_IDR = ~TC_IDR_CPCS;
-#endif
-				TS.InterruptServiceRoutine = DoAfterIsr;
-			}
-		}
 		void RepeatIsr(TimerState &TS)
 		{
-			if (TS.Repeat < InfiniteRepeat && !--TS.Repeat)
+			switch (TS.OverflowLeft)
 			{
-#ifdef ARDUINO_ARCH_AVR
-				// AVR架构必须手动终止计时
-				TS.Timer.TIMSK = 0;
-#endif
-				// SAM架构可以自动终止计时
-				if (TS.AutoAlloFree)
-					TS.Free = true;
-				TS.UserIsr;
-				if (TS.DoneCallback)
-					TS.DoneCallback();
-			}
-			else
-				TS.UserIsr;
-		}
-		void RepeatOverflowIsr(TimerState &TS)
-		{
-			const TimerInfo &TI = TS.Timer;
-#ifdef ARDUINO_ARCH_AVR
-			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
-			{
-				TI.CtcRegister ^= TI.CtcMask;
-				TI.TIMSK = TimerInfo::TOIE;
-				TS.OverflowLeft = TS.OverflowCount;
-				TS.InterruptServiceRoutine = RepeatOverflow;
-				TS.UserIsr();
-			}
-			else
-			{
-				TI.TIMSK = 0;
-				if (TS.AutoAlloFree)
-					TS.Free = true;
-				TS.UserIsr();
-				if (TS.DoneCallback)
-					TS.DoneCallback();
-			}
-#endif
-#ifdef ARDUINO_ARCH_SAM
-			if (TS.Repeat)
-			{
-				TcChannel &Channel = TI.Channel;
-				Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
-				Channel.TC_IDR = TC_IDR_CPCS;
-				TS.InterruptServiceRoutine = RepeatOverflow;
-				TS.UserIsr();
-			}
-			else
-			{
-				if (TS.AutoAlloFree)
-					TS.Free = true;
-				TS.UserIsr();
-				if (TS.DoneCallback)
-					TS.DoneCallback();
-			}
-#endif
-		}
-		void RepeatOverflow(TimerState &TS)
-		{
-			if (!--TS.OverflowLeft)
-			{
-				const TimerInfo &TI = TS.Timer;
-#ifdef ARDUINO_ARCH_AVR
-				TI.CtcRegister |= TI.CtcMask;
-				TI.TIMSK = TimerInfo::OCIEA;
-#endif
-#ifdef ARDUINO_ARCH_SAM
-				TcChannel &Channel = TI.Channel;
+			case 0:
 				if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
 				{
-					Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK4;
-					TS.OverflowLeft = TS.OverflowCount;
+					if (TS.OverflowLeft = TS.OverflowCount) // 这里就是要赋值并判断非零，不是判断相等
+#ifdef ARDUINO_ARCH_AVR
+						TS.Timer.CtcRegister &= ~TS.Timer.CtcMask;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+					TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
+#endif
+					TS.UserIsr();
 				}
 				else
-					Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_CPCDIS | TC_CMR_CPCSTOP | TC_CMR_TCCLKS_TIMER_CLOCK4;
-				Channel.TC_IER = TC_IER_CPCS;
+				{
+#ifdef ARDUINO_ARCH_AVR
+					TS.Timer.TIMSK = 0;
 #endif
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					TS.UserIsr();
+					if (TS.DoneCallback)
+						TS.DoneCallback();
+				}
+				break;
+			case 1:
+#ifdef ARDUINO_ARCH_AVR
+				TS.Timer.CtcRegister |= TS.Timer.CtcMask;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+				TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | (TS.Repeat == 1 ? TC_CMR_CPCDIS | TC_CMR_CPCSTOP : 0) | TC_CMR_TCCLKS_TIMER_CLOCK4;
+#endif
+			default:
+				TS.OverflowLeft--;
 			}
-			TS.InterruptServiceRoutine = RepeatOverflowIsr;
 		}
-	}
-	void FreeTimer(uint8_t Timer)
-	{
-		if (Timer < Advanced::NumTimers)
+		void SquareWaveIsr(TimerState &TS)
 		{
-			Advanced::Shutdown(Timer);
-			Advanced::TimerStates[Timer].Free = true;
+			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+			else
+			{
+#ifdef ARDUINO_ARCH_AVR
+				TS.Timer.TIMSK = 0;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+				TS.Timer.Channel.TC_CCR = TC_CCR_CLKDIS;
+#endif
+				if (TS.AutoAlloFree)
+					TS.Free = true;
+				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+				if (TS.DoneCallback)
+					TS.DoneCallback();
+			}
+		}
+		void SquareWaveOverflow(TimerState &TS)
+		{
+			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+			{
+#ifdef ARDUINO_ARCH_SAM
+				TcChannel &Channel = TS.Timer.Channel;
+				if ((Channel.TC_IDR = Channel.TC_IMR) == TC_IMR_CPAS)
+				{
+					Channel.TC_IER = TC_IER_CPCS;
+				}
+				else
+				{
+					Channel.TC_IER = TC_IER_CPAS;
+				}
+#endif
+				if (TS.OverflowLeft2)
+					TS.OverflowCount++;
+				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+			}
+			else
+			{
+#ifdef ARDUINO_ARCH_AVR
+				TS.Timer.TIMSK = 0;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+				TS.Timer.Channel.TC_CCR = TC_CCR_CLKDIS;
+#endif
+				if (TS.AutoAlloFree)
+					TS.Free = true;
+				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+				if (TS.DoneCallback)
+					TS.DoneCallback();
+			}
+		}
+		void FreeTimer(uint8_t Timer)
+		{
+			if (Timer < Advanced::NumTimers)
+			{
+				Advanced::Shutdown(Timer);
+				Advanced::TimerStates[Timer].Free = true;
+			}
+		}
+		Exception StartTiming(uint8_t &Timer)
+		{
+			TOFA_AllocateTimerStuff;
+			Advanced::StartTiming(Timer);
+			return E;
+		}
+		Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
+		{
+			TOFA_AllocateTimerStuff;
+			Advanced::Tone(Timer, NumPins, Pins, Frequency);
+			return E;
+		}
+		Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
+		{
+			TOFA_AllocateTimerStuff;
+			Advanced::Tone(Timer, NumPins, Pins, Frequency);
+			return E;
 		}
 	}
-	Exception StartTiming(uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::StartTiming(Timer);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency);
-		return E;
-	}
-}

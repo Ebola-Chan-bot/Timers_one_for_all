@@ -151,11 +151,14 @@ namespace Timers_one_for_all
 			union
 			{
 				void (*UserIsr)();
-				size_t OverflowLeft2;
+				struct
+				{
+					uint8_t Pin;
+					size_t OverflowLeft2;
+				};
 			};
 			const TimerInfo &Timer;
 			size_t Repeat;
-			std::vector<uint8_t> Pins;
 			void (*DoneCallback)();
 			// 记录计时器是否可被AllocateTimer分配
 			bool Free = true;
@@ -189,8 +192,7 @@ namespace Timers_one_for_all
 			while (TimeElapsed < Duration);
 			Shutdown(Timer);
 		}
-		void DoAfterIsr(TimerState &TS);
-		void DoAfterOverflow(TimerState &TS);
+		void RepeatIsr(TimerState &TS);
 		template <typename _Rep, typename _Period>
 		Exception DoAfter(uint8_t Timer, void (*Do)(), std::chrono::duration<_Rep, _Period> After)
 		{
@@ -210,28 +212,21 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				T.TCCRB = Clock;
-				// 只要达到一次OCRA就结束了，所以CTC无所谓，不用设置
-				T.ClearCounter();
 				T.SetOCRA(OCRA);
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::OCIEA;
-				TS.InterruptServiceRoutine = DoAfterIsr;
+				TS.OverflowLeft = 0;
 			}
 			else
 			{
 				Clock = T.NumPrescaleClocks - 1;
 				// 计时太长，需要积累几个Overflow
 				T.CtcRegister = 0;
-				T.TCCRB = Clock;
-				// 由于TCCRB和CtcRegister可能是同一个寄存器，上述两行的顺序不能改变
-				T.ClearCounter();
 				T.SetOCRA((After % T.PrescaleClocks[Clock].TicksPerOverflow).count());
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::TOIE;
-				TS.InterruptServiceRoutine = DoAfterOverflow;
 				TS.OverflowLeft = After / T.PrescaleClocks[Clock].TicksPerOverflow;
 			}
+			T.TCCRB = Clock;
+			T.ClearCounter();
+			T.TIFR = UINT8_MAX;
+			T.TIMSK = TimerInfo::OCIEA;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 			for (Clock = 0; Clock < 4; ++Clock)
@@ -246,23 +241,21 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				NVIC_ClearPendingIRQ(T.irq);
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_CPCSTOP | TC_CMR_CPCDIS | Clock, .TC_RC = TC_RC, .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
-				TS.InterruptServiceRoutine = DoAfterIsr;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_CPCSTOP | TC_CMR_CPCDIS | Clock, .TC_RC = TC_RC, .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowLeft = 0;
 			}
 			else
 			{
-				NVIC_ClearPendingIRQ(T.irq);
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (After % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_COVFS, .TC_IDR = ~TC_IDR_COVFS};
-				TS.InterruptServiceRoutine = DoAfterOverflow;
-				TS.OverflowLeft = OverflowLeft;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (After % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowLeft = After / PrescaleClocks[Clock].TicksPerOverflow;
 			}
+			NVIC_ClearPendingIRQ(T.irq);
 #endif
+			TS.Repeat = 1;
+			TS.InterruptServiceRoutine = RepeatIsr;
 			TS.UserIsr = Do;
 			return Exception::Successful_operation;
 		}
-		void RepeatIsr(TimerState &TS);
-		void RepeatOverflow(TimerState &TS);
 		template <typename _Rep, typename _Period>
 		Exception PeriodicDoRepeat(uint8_t Timer, std::chrono::duration<_Rep, _Period> Period, void (*Do)(), size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
 		{
@@ -282,28 +275,22 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				T.TCCRB = Clock;
-				T.CtcRegister |= T.CtcMask; // CtcRegister和TCCRB可能是同一个寄存器，所以用|=防止覆盖
-				T.ClearCounter();
+				T.CtcRegister = T.CtcMask;
 				T.SetOCRA(OCRA);
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::OCIEA;
-				TS.InterruptServiceRoutine = RepeatIsr;
+				TS.OverflowCount = 0;
 			}
 			else
 			{
 				Clock = T.NumPrescaleClocks - 1;
 				// 计时太长，需要积累几个Overflow
 				T.CtcRegister = 0;
-				T.TCCRB = Clock;
-				// 由于TCCRB和CtcRegister可能是同一个寄存器，上述两行的顺序不能改变
-				T.ClearCounter();
 				T.SetOCRA((Period % T.PrescaleClocks[Clock].TicksPerOverflow).count());
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::TOIE;
-				TS.InterruptServiceRoutine = RepeatOverflow;
-				TS.OverflowCount = TS.OverflowLeft = Period / T.PrescaleClocks[Clock].TicksPerOverflow;
+				TS.OverflowCount = Period / T.PrescaleClocks[Clock].TicksPerOverflow;
 			}
+			T.TCCRB |= Clock;
+			T.ClearCounter();
+			T.TIFR = UINT8_MAX;
+			T.TIMSK = TimerInfo::OCIEA;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 			for (Clock = 0; Clock < 4; ++Clock)
@@ -318,18 +305,18 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				NVIC_ClearPendingIRQ(T.irq);
 				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RC = TC_RC, .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
-				TS.InterruptServiceRoutine = RepeatIsr;
+				TS.OverflowCount = 0;
 			}
 			else
 			{
-				NVIC_ClearPendingIRQ(T.irq);
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (Period % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_COVFS, .TC_IDR = ~TC_IDR_COVFS};
-				TS.InterruptServiceRoutine = RepeatOverflow;
-				TS.OverflowCount = TS.OverflowLeft = Period / PrescaleClocks[Clock].TicksPerOverflow;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (Period % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowCount = Period / PrescaleClocks[Clock].TicksPerOverflow;
 			}
+			NVIC_ClearPendingIRQ(T.irq);
 #endif
+			TS.InterruptServiceRoutine = RepeatIsr;
+			TS.OverflowLeft = TS.OverflowCount;
 			TS.UserIsr = Do;
 			TS.Repeat = Repeat;
 			TS.DoneCallback = DoneCallback;
@@ -394,23 +381,21 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				NVIC_ClearPendingIRQ(T.irq);
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RA = TC_RA, .TC_RC = Cycle / PC.TicksPerCounter, .TC_IER = TC_IER_CPCS | TC_IER_CPAS, .TC_IDR = ~(TC_IDR_CPCS | TC_IDR_CPAS)};
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RA = TC_RA, .TC_RC = Cycle / PC.TicksPerCounter, .TC_IER = TC_IER_CPAS | TC_IER_CPCS, .TC_IDR = ~(TC_IDR_CPAS | TC_IDR_CPCS)};
 				TS.InterruptServiceRoutine = SquareWaveIsr;
 			}
 			else
 			{
 				const std::chrono::duration<_Rep, _Period> TC_RA = Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin) ? High : Low;
-				NVIC_ClearPendingIRQ(T.irq);
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RA = (TC_RA % PC.TicksPerOverflow).count(), .TC_RC = (Cycle % PC.TicksPerOverflow).count(), .TC_IER = TC_IER_COVFS, .TC_IDR = ~TC_IDR_COVFS};
-				TS.InterruptServiceRoutine = RepeatOverflow;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RA = (TC_RA % PC.TicksPerOverflow).count(), .TC_RC = (Cycle % PC.TicksPerOverflow).count(), .TC_IER = TC_IER_CPAS, .TC_IDR = TC_IDR_CPAS};
 				TS.OverflowCount = 0;
 				TS.OverflowLeft = TC_RA / PC.TicksPerOverflow;
 				TS.OverflowLeft2 = Cycle / PC.TicksPerOverflow;
 				TS.InterruptServiceRoutine = SquareWaveOverflow;
 			}
+			NVIC_ClearPendingIRQ(T.irq);
 #endif
-			TS.Pins.assign({Pin});
+			TS.Pin = Pin;
 			TS.Repeat = Repeat;
 			TS.DoneCallback = DoneCallback;
 			return Exception::Successful_operation;
