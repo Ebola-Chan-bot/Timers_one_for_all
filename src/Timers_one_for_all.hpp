@@ -33,18 +33,19 @@ namespace Timers_one_for_all
 		using Ticks = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 #ifdef ARDUINO_ARCH_AVR
 		// 记录计时器的硬件常数
-		constexpr struct TimerInfo
+		constexpr class TimerInfo
 		{
-			static constexpr uint8_t OCIEA = 2;
-			static constexpr uint8_t TOIE = 1;
-			volatile uint8_t &TCCRB;
-			volatile uint8_t &CtcRegister; // 如果需要TCNT达到OCRA时自动清零，需要设置CtcMask位
 			volatile void *TCNT;
 			volatile void *OCRA;
+			volatile void *OCRB;
+			uint8_t CounterBits;
+
+		public:
+			volatile uint8_t &CtcRegister; // 如果需要TCNT达到OCRA时自动清零，需要设置CtcMask位
+			uint8_t CtcMask;
+			volatile uint8_t &TCCRB;
 			volatile uint8_t &TIFR;
 			volatile uint8_t &TIMSK;
-			uint8_t CtcMask;
-			uint8_t CounterBits;
 			uint8_t NumPrescaleClocks;
 			struct
 			{
@@ -52,30 +53,33 @@ namespace Timers_one_for_all
 				Ticks TicksPerCounter;
 				Ticks TicksPerOverflow;
 			} PrescaleClocks[7];
+			Ticks MaxTPO;
 			uint16_t ReadCounter() const;
 			void ClearCounter() const;
 			void SetOCRA(uint16_t OCRA) const;
+			void SetOCRB(uint16_t OCRB) const;
+			void SetCtcClock(bool CTC, uint8_t Clock) const;
 			template <typename... T>
-			constexpr TimerInfo(volatile uint8_t &TCCRB, volatile uint8_t &CtcRegister, volatile void *TCNT, volatile void *OCRA, volatile uint8_t &TIFR, volatile uint8_t &TIMSK, uint8_t CtcBit, uint8_t CounterBits, T... PrescaleDivisors) : TCCRB(TCCRB), CtcRegister(CtcRegister), TCNT(TCNT), OCRA(OCRA), TIFR(TIFR), TIMSK(TIMSK), CtcMask(1 << CtcBit), CounterBits(CounterBits), NumPrescaleClocks(sizeof...(PrescaleDivisors)), PrescaleClocks{{PrescaleDivisors, Ticks(PrescaleDivisors), Ticks(PrescaleDivisors << CounterBits)}...} {}
+			constexpr TimerInfo(volatile uint8_t &TCCRB, volatile uint8_t &CtcRegister, volatile void *TCNT, volatile void *OCRA, volatile void *OCRB, volatile uint8_t &TIFR, volatile uint8_t &TIMSK, uint8_t CtcBit, uint8_t CounterBits, T... PrescaleDivisors) : TCCRB(TCCRB), CtcRegister(CtcRegister), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB), TIFR(TIFR), TIMSK(TIMSK), CtcMask(1 << CtcBit), CounterBits(CounterBits), NumPrescaleClocks(sizeof...(PrescaleDivisors)), PrescaleClocks{{PrescaleDivisors, Ticks(PrescaleDivisors), Ticks(PrescaleDivisors << CounterBits)}...}, MaxTPO(PrescaleClocks[NumPrescaleClocks - 1].TicksPerOverflow) {}
 		} Timers[] = {
 #ifndef TOFA_DISABLE_0
-			{TCCR0B, TCCR0A, &TCNT0, &OCR0A, TIFR0, TIMSK0, WGM01, 8, 1, 8, 64, 256, 1024},
+			{TCCR0B, TCCR0A, &TCNT0, &OCR0A, &OCR0B, TIFR0, TIMSK0, WGM01, 8, 1, 8, 64, 256, 1024},
 #endif
 #ifndef TOFA_DISABLE_1
-			{TCCR1B, TCCR1B, &TCNT1, &OCR1A, TIFR1, TIMSK1, WGM12, 16, 1, 8, 64, 256, 1024},
+			{TCCR1B, TCCR1B, &TCNT1, &OCR1A, &OCR1B, TIFR1, TIMSK1, WGM12, 16, 1, 8, 64, 256, 1024},
 #endif
 #ifndef TOFA_DISABLE_2
-			{TCCR2B, TCCR2A, &TCNT2, &OCR2A, TIFR2, TIMSK2, WGM21, 8, 1, 8, 32, 64, 128, 256, 1024},
+			{TCCR2B, TCCR2A, &TCNT2, &OCR2A, &OCR2B, TIFR2, TIMSK2, WGM21, 8, 1, 8, 32, 64, 128, 256, 1024},
 #endif
 #ifdef __AVR_ATmega2560__
 #ifndef TOFA_DISABLE_3
-			{TCCR3B, TCCR3B, &TCNT3, &OCR3A, TIFR3, TIMSK3, WGM32, 16, 1, 8, 64, 256, 1024},
+			{TCCR3B, TCCR3B, &TCNT3, &OCR3A, &OCR3B, TIFR3, TIMSK3, WGM32, 16, 1, 8, 64, 256, 1024},
 #endif
 #ifndef TOFA_DISABLE_4
-			{TCCR4B, TCCR4B, &TCNT4, &OCR4A, TIFR4, TIMSK4, WGM42, 16, 1, 8, 64, 256, 1024},
+			{TCCR4B, TCCR4B, &TCNT4, &OCR4A, &OCR4B, TIFR4, TIMSK4, WGM42, 16, 1, 8, 64, 256, 1024},
 #endif
 #ifndef TOFA_DISABLE_5
-			{TCCR5B, TCCR5B, &TCNT5, &OCR5A, TIFR5, TIMSK5, WGM52, 16, 1, 8, 64, 256, 1024}
+			{TCCR5B, TCCR5B, &TCNT5, &OCR5A, &OCR5B, TIFR5, TIMSK5, WGM52, 16, 1, 8, 64, 256, 1024}
 #endif
 #endif
 		};
@@ -127,6 +131,7 @@ namespace Timers_one_for_all
 			Ticks TicksPerOverflow;
 			constexpr PrescaleClock(uint8_t Index) : TicksPerCounter(Ticks(2 << (Index << 1))), TicksPerOverflow(TicksPerCounter * ((uint64_t)1 << 32)) {}
 		} PrescaleClocks[4] = {0, 1, 2, 3};
+		constexpr Ticks MaxTPO = PrescaleClocks[3].TicksPerOverflow;
 		// 执行任何Advanced方法之前必须先进行全局初始化一次。重复初始化不会出错。
 		inline void GlobalInitialize()
 		{
@@ -218,20 +223,16 @@ namespace Timers_one_for_all
 			else
 			{
 				Clock = T.NumPrescaleClocks - 1;
-				// 计时太长，需要积累几个Overflow
-				T.CtcRegister = 0;
-				T.SetOCRA((After % T.PrescaleClocks[Clock].TicksPerOverflow).count());
-				TS.OverflowLeft = After / T.PrescaleClocks[Clock].TicksPerOverflow;
+				T.SetOCRA((After % T.MaxTPO).count());
+				TS.OverflowLeft = After / T.MaxTPO;
 			}
-			T.TCCRB = Clock;
+			T.SetCtcClock(false, Clock);
 			T.ClearCounter();
 			T.TIFR = UINT8_MAX;
-			T.TIMSK = TimerInfo::OCIEA;
+			T.TIMSK = OCIE0A
 #endif
 #ifdef ARDUINO_ARCH_SAM
-			for (Clock = 0; Clock < 4; ++Clock)
-				if (After < PrescaleClocks[Clock].TicksPerOverflow)
-					break;
+				for (Clock = 0; Clock < 4; ++Clock) if (After < PrescaleClocks[Clock].TicksPerOverflow) break;
 			if (Clock < 4)
 			{
 				const size_t TC_RC = After / PrescaleClocks[Clock].TicksPerCounter;
@@ -246,8 +247,8 @@ namespace Timers_one_for_all
 			}
 			else
 			{
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (After % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
-				TS.OverflowLeft = After / PrescaleClocks[Clock].TicksPerOverflow;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (After % MaxTPO).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowLeft = After / MaxTPO;
 			}
 			NVIC_ClearPendingIRQ(T.irq);
 #endif
@@ -275,22 +276,19 @@ namespace Timers_one_for_all
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				T.CtcRegister = T.CtcMask;
+				T.SetCtcClock(true, Clock);
 				T.SetOCRA(OCRA);
 				TS.OverflowCount = 0;
 			}
 			else
 			{
-				Clock = T.NumPrescaleClocks - 1;
-				// 计时太长，需要积累几个Overflow
-				T.CtcRegister = 0;
-				T.SetOCRA((Period % T.PrescaleClocks[Clock].TicksPerOverflow).count());
-				TS.OverflowCount = Period / T.PrescaleClocks[Clock].TicksPerOverflow;
+				T.SetCtcClock(false, T.NumPrescaleClocks - 1);
+				T.SetOCRA((Period % T.MaxTPO).count());
+				TS.OverflowCount = Period / T.MaxTPO;
 			}
-			T.TCCRB |= Clock;
 			T.ClearCounter();
 			T.TIFR = UINT8_MAX;
-			T.TIMSK = TimerInfo::OCIEA;
+			T.TIMSK = OCIE0A;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 			for (Clock = 0; Clock < 4; ++Clock)
@@ -310,8 +308,8 @@ namespace Timers_one_for_all
 			}
 			else
 			{
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (Period % PrescaleClocks[Clock].TicksPerOverflow).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
-				TS.OverflowCount = Period / PrescaleClocks[Clock].TicksPerOverflow;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (Period % MaxTPO).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowCount = Period / MaxTPO;
 			}
 			NVIC_ClearPendingIRQ(T.irq);
 #endif
@@ -325,7 +323,7 @@ namespace Timers_one_for_all
 		void SquareWaveIsr(TimerState &TS);
 		void SquareWaveOverflow(TimerState &TS);
 		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
+		Exception SquareWave(uint8_t Timer, uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, bool CurrentHighOrLow, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
 		{
 			TimerState &TS = TimerStates[Timer];
 			const TimerInfo &T = Timers[Timer];
@@ -333,64 +331,61 @@ namespace Timers_one_for_all
 			const std::chrono::duration<_Rep, _Period> Cycle = High + Low;
 #ifdef ARDUINO_ARCH_AVR
 			for (Clock = 0; Clock < T.NumPrescaleClocks; ++Clock)
-				if (Period < T.PrescaleClocks[Clock].TicksPerOverflow)
+				if (Cycle < T.PrescaleClocks[Clock].TicksPerOverflow)
 					break;
 			if (Clock < T.NumPrescaleClocks)
 			{
-				const size_t OCRA = Period / T.PrescaleClocks[Clock].TicksPerCounter;
-				if (!OCRA)
+				const size_t OCRB = (CurrentHighOrLow ? High : Low) / T.PrescaleClocks[Clock].TicksPerCounter;
+				if (!OCRB)
 				{
 					if (TS.AutoAlloFree)
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				T.TCCRB = Clock;
-				T.CtcRegister |= T.CtcMask; // CtcRegister和TCCRB可能是同一个寄存器，所以用|=防止覆盖
-				T.ClearCounter();
-				T.SetOCRA(OCRA);
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::OCIEA;
-				TS.InterruptServiceRoutine = RepeatIsr;
+				T.SetCtcClock(true, Clock);
+				T.SetOCRA(Cycle / T.PrescaleClocks[Clock].TicksPerCounter);
+				T.SetOCRB(OCRB);
+				T.TIMSK = OCIE0A | OCIE0B;
+				TS.InterruptServiceRoutine = SquareWaveIsr;
 			}
 			else
 			{
-				Clock = T.NumPrescaleClocks - 1;
-				// 计时太长，需要积累几个Overflow
-				T.CtcRegister = 0;
-				T.TCCRB = Clock;
-				// 由于TCCRB和CtcRegister可能是同一个寄存器，上述两行的顺序不能改变
-				T.ClearCounter();
-				T.SetOCRA((Period % T.PrescaleClocks[Clock].TicksPerOverflow).count());
-				T.TIFR = UINT8_MAX;
-				T.TIMSK = TimerInfo::TOIE;
-				TS.InterruptServiceRoutine = RepeatOverflow;
-				TS.OverflowCount = TS.OverflowLeft = Period / T.PrescaleClocks[Clock].TicksPerOverflow;
+				const std::chrono::duration<_Rep, _Period> OCRB = CurrentHighOrLow ? High : Low;
+				T.SetCtcClock(false, T.NumPrescaleClocks - 1);
+				T.SetOCRA((Cycle % T.MaxTPO).count());
+				T.SetOCRB((OCRB % T.MaxTPO).count());
+				T.TIMSK = OCIE0B;
+				TS.InterruptServiceRoutine = SquareWaveOverflow;
+				TS.OverflowLeft = OCRB / T.MaxTPO;
+				TS.OverflowLeft2 = Cycle / T.MaxTPO;
 			}
+			T.ClearCounter();
+			T.TIFR = UINT8_MAX;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 			for (Clock = 0; Clock < 4; ++Clock)
 				if (Cycle < PrescaleClocks[Clock].TicksPerOverflow)
 					break;
-			const PrescaleClock &PC = PrescaleClocks[Clock];
 			if (Clock < 4)
 			{
-				const size_t TC_RA = (Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin) ? High : Low) / PC.TicksPerCounter;
+				const Ticks TicksPerCounter = PrescaleClocks[Clock].TicksPerCounter;
+				const size_t TC_RA = (CurrentHighOrLow ? High : Low) / TicksPerCounter;
 				if (!TC_RA)
 				{
 					if (TS.AutoAlloFree)
 						TS.Free = true;
 					return Exception::Timing_too_short;
 				}
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RA = TC_RA, .TC_RC = Cycle / PC.TicksPerCounter, .TC_IER = TC_IER_CPAS | TC_IER_CPCS, .TC_IDR = ~(TC_IDR_CPAS | TC_IDR_CPCS)};
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RA = TC_RA, .TC_RC = Cycle / TicksPerCounter, .TC_IER = TC_IER_CPAS | TC_IER_CPCS, .TC_IDR = ~(TC_IDR_CPAS | TC_IDR_CPCS)};
 				TS.InterruptServiceRoutine = SquareWaveIsr;
 			}
 			else
 			{
-				const std::chrono::duration<_Rep, _Period> TC_RA = Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin) ? High : Low;
-				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RA = (TC_RA % PC.TicksPerOverflow).count(), .TC_RC = (Cycle % PC.TicksPerOverflow).count(), .TC_IER = TC_IER_CPAS, .TC_IDR = TC_IDR_CPAS};
+				const std::chrono::duration<_Rep, _Period> TC_RA = CurrentHighOrLow ? High : Low;
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RA = (TC_RA % MaxTPO).count(), .TC_RC = (Cycle % MaxTPO).count(), .TC_IER = TC_IER_CPAS, .TC_IDR = ~TC_IDR_CPAS};
 				TS.OverflowCount = 0;
-				TS.OverflowLeft = TC_RA / PC.TicksPerOverflow;
-				TS.OverflowLeft2 = Cycle / PC.TicksPerOverflow;
+				TS.OverflowLeft = TC_RA / MaxTPO;
+				TS.OverflowLeft2 = Cycle / MaxTPO;
 				TS.InterruptServiceRoutine = SquareWaveOverflow;
 			}
 			NVIC_ClearPendingIRQ(T.irq);
@@ -400,34 +395,9 @@ namespace Timers_one_for_all
 			TS.DoneCallback = DoneCallback;
 			return Exception::Successful_operation;
 		}
-		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low)
-		{
-		}
-		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat)
-		{
-		}
-		template <typename _Rep, typename _Period>
-		Exception SquareWave(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, void (*DoneCallback)())
-		{
-		}
 		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency);
 		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration)
-		{
-		}
-		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)())
-		{
-		}
-		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency);
-		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration)
-		{
-		}
-		template <typename _Rep, typename _Period>
-		Exception Tone(uint8_t Timer, uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)())
+		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)() = nullptr)
 		{
 		}
 	}
@@ -491,62 +461,29 @@ namespace Timers_one_for_all
 	}
 	// 此处的Repeat参数是电平反转的次数，即1代表电平反转一次，2才是一个完整的周期。注意第1次反转也需要等待High或Low时间后才发生，取决于当前电平状态。
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer, size_t Repeat = InfiniteRepeat, void (*DoneCallback)())
+	inline Exception SquareWave(uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
 	{
 		TOFA_AllocateTimerStuff;
 		pinMode(Pin, OUTPUT);
-		E = dvanced::SquareWave(Timer, Pin, High, Low, Repeat, DoneCallback);
+		E = dvanced::SquareWave(Timer, Pin, High, Low, Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin), Repeat, DoneCallback);
 		return E;
 	}
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer)
+	inline Exception SquareWave(uint8_t Pin, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, uint8_t &Timer, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)() = nullptr)
 	{
 		TOFA_AllocateTimerStuff;
-		Advanced::SquareWave(Timer, NumPins, Pins, High, Low);
+		pinMode(Pin, OUTPUT);
+		const bool CurrentHighOrLow = Low_level_quick_digital_IO::DigitalRead<OUTPUT>(Pin);
+		const std::chrono::duration<_Rep, _Period> Cycle = High + Low;
+		E = dvanced::SquareWave(Timer, Pin, High, Low, CurrentHighOrLow, Duration / Cycle * 2 + (Duration % Cycle >= (CurrentHighOrLow ? High : Low)), DoneCallback);
 		return E;
 	}
+	Exception Tone(uint8_t Pin, uint16_t Frequency, uint8_t &Timer);
 	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::SquareWave(Timer, NumPins, Pins, High, Low, Repeat);
-		return E;
-	}
-	template <typename _Rep, typename _Period>
-	inline Exception SquareWave(uint8_t NumPins, const uint8_t *Pins, std::chrono::duration<_Rep, _Period> High, std::chrono::duration<_Rep, _Period> Low, size_t Repeat, void (*DoneCallback)(), uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::SquareWave(Timer, NumPins, Pins, High, Low, Repeat, DoneCallback);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer);
-	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, uint8_t &Timer)
+	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, uint8_t &Timer, void (*DoneCallback)() = nullptr)
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration);
-		return E;
-	}
-	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)(), uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration, DoneCallback);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer);
-	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration);
-		return E;
-	}
-	template <typename _Rep, typename _Period>
-	inline Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, std::chrono::duration<_Rep, _Period> Duration, void (*DoneCallback)(), uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency, Duration, DoneCallback);
 		return E;
 	}
 }

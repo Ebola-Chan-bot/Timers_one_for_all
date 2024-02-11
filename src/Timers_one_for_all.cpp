@@ -106,6 +106,30 @@ namespace Timers_one_for_all
 			else
 				*(uint16_t *)TCNT = 0;
 		}
+		void TimerInfo::SetOCRA(uint16_t New) const
+		{
+			if (CounterBits == 8)
+				*(uint8_t *)OCRA = New;
+			else
+				*(uint16_t *)OCRA = New;
+		}
+		void TimerInfo::SetOCRB(uint16_t New) const
+		{
+			if (CounterBits == 8)
+				*(uint8_t *)OCRB = New;
+			else
+				*(uint16_t *)OCRB = New;
+		}
+		void TimerInfo::SetCtcClock(bool CTC, uint8_t Clock) const
+		{
+			if (TCCRB == CtcRegister)
+				TCCRB = CTC ? CtcMask | Clock : Clock;
+			else
+			{
+				TCCRB = Clock;
+				CtcRegister = CtcMask;
+			}
+		}
 #endif
 #ifdef ARDUINO_ARCH_SAM
 		void TimerInitialize(uint8_t Timer)
@@ -139,13 +163,10 @@ namespace Timers_one_for_all
 		{
 			const TimerInfo &T = Timers[Timer];
 #ifdef ARDUINO_ARCH_AVR
-			T.TCCRB = 0;
-			T.CtcRegister = 0;
-			// 由于TCCRB和CtcRegister可能是同一个寄存器，上述两行的顺序不能改变
-
+			T.SetCtcClock(false, 0);
 			T.ClearCounter();
 			T.TIFR = UINT8_MAX;
-			T.TIMSK = TimerInfo::TOIE;
+			T.TIMSK = TOIE0;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 			NVIC_ClearPendingIRQ(T.irq);
@@ -163,7 +184,7 @@ namespace Timers_one_for_all
 				{
 					if (TS.OverflowLeft = TS.OverflowCount) // 这里就是要赋值并判断非零，不是判断相等
 #ifdef ARDUINO_ARCH_AVR
-						TS.Timer.CtcRegister &= ~TS.Timer.CtcMask;
+						TS.Timer.CtcRegister ^= TS.Timer.CtcMask;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 					TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
@@ -193,83 +214,98 @@ namespace Timers_one_for_all
 				TS.OverflowLeft--;
 			}
 		}
+		void SquareWaveFinal(TimerState &TS)
+		{
+#ifdef ARDUINO_ARCH_AVR
+			TS.Timer.TIMSK = 0;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+			TS.Timer.Channel.TC_CCR = TC_CCR_CLKDIS;
+#endif
+			if (TS.AutoAlloFree)
+				TS.Free = true;
+			Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+			if (TS.DoneCallback)
+				TS.DoneCallback();
+		}
 		void SquareWaveIsr(TimerState &TS)
 		{
 			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
 				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
 			else
-			{
-#ifdef ARDUINO_ARCH_AVR
-				TS.Timer.TIMSK = 0;
-#endif
-#ifdef ARDUINO_ARCH_SAM
-				TS.Timer.Channel.TC_CCR = TC_CCR_CLKDIS;
-#endif
-				if (TS.AutoAlloFree)
-					TS.Free = true;
-				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
-				if (TS.DoneCallback)
-					TS.DoneCallback();
-			}
+				SquareWaveFinal(TS);
 		}
 		void SquareWaveOverflow(TimerState &TS)
 		{
-			if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
-			{
-#ifdef ARDUINO_ARCH_SAM
-				TcChannel &Channel = TS.Timer.Channel;
-				if ((Channel.TC_IDR = Channel.TC_IMR) == TC_IMR_CPAS)
+			if (TS.OverflowCount == TS.OverflowLeft2)
+				if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
 				{
-					Channel.TC_IER = TC_IER_CPCS;
+#ifdef ARDUINO_ARCH_AVR
+					TS.Timer.CtcRegister ^= TS.Timer.CtcMask;
+					TS.Timer.TIMSK = OCIE0B;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+					TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
+					TS.Timer.Channel.TC_IDR = TC_IDR_CPCS;
+					TS.Timer.Channel.TC_IER = TC_IER_CPAS;
+#endif
+					TS.OverflowCount = 0;
+					Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
 				}
 				else
-				{
-					Channel.TC_IER = TC_IER_CPAS;
-				}
-#endif
-				if (TS.OverflowLeft2)
-					TS.OverflowCount++;
-				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
-			}
+					SquareWaveFinal(TS);
 			else
 			{
+				if (TS.OverflowCount == TS.OverflowLeft)
+				{
+					if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+					{
 #ifdef ARDUINO_ARCH_AVR
-				TS.Timer.TIMSK = 0;
+						TS.Timer.TIMSK = OCIE0A;
 #endif
 #ifdef ARDUINO_ARCH_SAM
-				TS.Timer.Channel.TC_CCR = TC_CCR_CLKDIS;
+						TS.Timer.Channel.TC_IDR = TC_IDR_CPAS;
+						TS.Timer.Channel.TC_IER = TC_IER_CPCS;
 #endif
-				if (TS.AutoAlloFree)
-					TS.Free = true;
-				Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
-				if (TS.DoneCallback)
-					TS.DoneCallback();
+						Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+					}
+					else
+						SquareWaveFinal(TS);
+				}
+				if (++TS.OverflowCount == TS.OverflowLeft2)
+#ifdef ARDUINO_ARCH_AVR
+					TS.Timer.CtcRegister |= TS.Timer.CtcMask;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+				TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK4;
+#endif
 			}
-		}
-		void FreeTimer(uint8_t Timer)
-		{
-			if (Timer < Advanced::NumTimers)
-			{
-				Advanced::Shutdown(Timer);
-				Advanced::TimerStates[Timer].Free = true;
-			}
-		}
-		Exception StartTiming(uint8_t &Timer)
-		{
-			TOFA_AllocateTimerStuff;
-			Advanced::StartTiming(Timer);
-			return E;
-		}
-		Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-		{
-			TOFA_AllocateTimerStuff;
-			Advanced::Tone(Timer, NumPins, Pins, Frequency);
-			return E;
-		}
-		Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-		{
-			TOFA_AllocateTimerStuff;
-			Advanced::Tone(Timer, NumPins, Pins, Frequency);
-			return E;
 		}
 	}
+	void FreeTimer(uint8_t Timer)
+	{
+		if (Timer < Advanced::NumTimers)
+		{
+			Advanced::Shutdown(Timer);
+			Advanced::TimerStates[Timer].Free = true;
+		}
+	}
+	Exception StartTiming(uint8_t &Timer)
+	{
+		TOFA_AllocateTimerStuff;
+		Advanced::StartTiming(Timer);
+		return E;
+	}
+	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
+	{
+		TOFA_AllocateTimerStuff;
+		Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		return E;
+	}
+	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
+	{
+		TOFA_AllocateTimerStuff;
+		Advanced::Tone(Timer, NumPins, Pins, Frequency);
+		return E;
+	}
+}
