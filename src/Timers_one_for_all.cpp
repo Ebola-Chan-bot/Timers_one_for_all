@@ -281,6 +281,108 @@ namespace Timers_one_for_all
 #endif
 			}
 		}
+		void ToneIsr(TimerState &TS)
+		{
+			switch (TS.OverflowLeft)
+			{
+			case 0:
+				if (TS.Repeat == InfiniteRepeat || --TS.Repeat)
+				{
+					if (TS.OverflowLeft = TS.OverflowCount) // 这里就是要赋值并判断非零，不是判断相等
+#ifdef ARDUINO_ARCH_AVR
+						TS.Timer.CtcRegister ^= TS.Timer.CtcMask;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+					TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4;
+#endif
+					Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+				}
+				else
+				{
+#ifdef ARDUINO_ARCH_AVR
+					TS.Timer.TIMSK = 0;
+#endif
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					Low_level_quick_digital_IO::DigitalToggle(TS.Pin);
+					if (TS.DoneCallback)
+						TS.DoneCallback();
+				}
+				break;
+			case 1:
+#ifdef ARDUINO_ARCH_AVR
+				TS.Timer.CtcRegister |= TS.Timer.CtcMask;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+				TS.Timer.Channel.TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | (TS.Repeat == 1 ? TC_CMR_CPCDIS | TC_CMR_CPCSTOP : 0) | TC_CMR_TCCLKS_TIMER_CLOCK4;
+#endif
+			default:
+				TS.OverflowLeft--;
+			}
+		}
+		Exception Tone(uint8_t Timer, uint8_t Pin, uint16_t Frequency, size_t Repeat = InfiniteRepeat, void (*DoneCallback)() = nullptr)
+		{			
+			TimerState &TS = TimerStates[Timer];
+			const TimerInfo &T = Timers[Timer];
+			uint8_t Clock;
+			const std::chrono::microseconds Period = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)) / (Frequency << 1);
+#ifdef ARDUINO_ARCH_AVR
+			for (Clock = 0; Clock < T.NumPrescaleClocks; ++Clock)
+				if (Period < T.PrescaleClocks[Clock].TicksPerOverflow)
+					break;
+			if (Clock < T.NumPrescaleClocks)
+			{
+				const size_t OCRA = Period / T.PrescaleClocks[Clock].TicksPerCounter;
+				if (!OCRA)
+				{
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					return Exception::Timing_too_short;
+				}
+				T.SetCtcClock(true, Clock);
+				T.SetOCRA(OCRA);
+				TS.OverflowCount = 0;
+			}
+			else
+			{
+				T.SetCtcClock(false, T.NumPrescaleClocks - 1);
+				T.SetOCRA((Period % T.MaxTPO).count());
+				TS.OverflowCount = Period / T.MaxTPO;
+			}
+			T.ClearCounter();
+			T.TIFR = UINT8_MAX;
+			T.TIMSK = OCIE0A;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+			for (Clock = 0; Clock < 4; ++Clock)
+				if (Period < PrescaleClocks[Clock].TicksPerOverflow)
+					break;
+			if (Clock < 4)
+			{
+				const size_t TC_RC = Period / PrescaleClocks[Clock].TicksPerCounter;
+				if (!TC_RC)
+				{
+					if (TS.AutoAlloFree)
+						TS.Free = true;
+					return Exception::Timing_too_short;
+				}
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | Clock, .TC_RC = TC_RC, .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowCount = 0;
+			}
+			else
+			{
+				T.Channel = {.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG, .TC_CMR = TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK4, .TC_RC = (Period % MaxTPO).count(), .TC_IER = TC_IER_CPCS, .TC_IDR = ~TC_IDR_CPCS};
+				TS.OverflowCount = Period / MaxTPO;
+			}
+			NVIC_ClearPendingIRQ(T.irq);
+#endif
+			TS.InterruptServiceRoutine = ToneIsr;
+			TS.OverflowLeft = TS.OverflowCount;
+			TS.Pin = Pin;
+			TS.Repeat = Repeat;
+			TS.DoneCallback = DoneCallback;
+			return Exception::Successful_operation;
+		}
 	}
 	void FreeTimer(uint8_t Timer)
 	{
@@ -294,18 +396,6 @@ namespace Timers_one_for_all
 	{
 		TOFA_AllocateTimerStuff;
 		Advanced::StartTiming(Timer);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency);
-		return E;
-	}
-	Exception Tone(uint8_t NumPins, const uint8_t *Pins, uint16_t Frequency, uint8_t &Timer)
-	{
-		TOFA_AllocateTimerStuff;
-		Advanced::Tone(Timer, NumPins, Pins, Frequency);
 		return E;
 	}
 }
