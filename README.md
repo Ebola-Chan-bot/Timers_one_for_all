@@ -1,13 +1,27 @@
+[README.en.md](README.en.md)
+
 充分利用开发板上所有的计时器。
 
 音响、方波、延迟任务、定时重复，这些任务都需要应用开发板上的计时器才能完成。有时你甚至需要多个计时器同步运行，实现多线程任务。但是，当前Arduino社区并没有提供比较完善的计时器运行库。它们能够执行的任务模式非常有限，而且用户无法指定具体要使用哪个计时器。其结果就是，经常有一些使用计时器的库发生冲突，或者和用户自己的应用发生冲突。本项目旨在将计时器可能需要使用的所有功能在所有计时器上实现，最关键的是允许用户手动指定要使用的硬件计时器，避免冲突。
 
 本库暂时仅支持1㎳~1min范围的计时。为了提高性能，部分参数为模板参数，不能在运行时动态设置。如有超出此范围的需求，可以提Issue或 Pull request。
-
 # 硬件计时器
-本库所有公开API的第一个模板参数，都是计时器的编号。不同计时器之间完全独立运行，互不干扰。用户必须在代码中手动指定要使用哪个硬件计时器来执行功能。不同架构的计时器数目和属性各不相同。
+如果使用多个计时器相关的库，则可能会发生计时器冲突。为了避免冲突，本库要求用户必须手动指定要在整个Sketch中使用的所有硬件计时器，方法是在.ino主代码文件中列出要使用的硬件计时器对应的预定义宏。例如：
+```C++
+#include <Timers_one_for_all.hpp>
+TOFA_USE_TIMER0;
+TOFA_USE_TIMER3;
+TOFA_USE_TIMER5;
+```
+上述代码表示将会用到0、3、5三个硬件计时器。用户有义务确保这些计时器不会跟所使用的其它库发生冲突。已经被其它库占用的计时器不应在这里被标记将会用到。每个预定义宏实际上预处理成了对应计时器的中断处理函数定义，因此只能使用一次，否则会发生函数重定义错误。此外，还需要指定允许自动调度的计时器，例如：
+```C++
+TOFA_SCHEDULABLE_TIMERS(3,5);
+//指定3、5计时器作为自动调度的范围
 
-此外，内置函数`analogWrite()`和`tone()`会在运行时动态地征用某些计时器，并且不会检测该计时器是否正在被本库使用；本库也无法检测用户指定的计时器是否正在被这些内置函数使用。因此如果同时使用这些内置函数，您将可能需要考虑潜在的冲突问题。如需禁用特定的计时器，请参阅`Timers_one_for_all.hpp`中的注释和宏定义。
+TOFA_SCHEDULABLE_TIMERS();
+//即使不使用自动调度，也必须写一个空的占位符
+```
+此预定义宏函数可以接受可变数目的参数。在这里指定的硬件计时器必须在上一段已标记为要使用的硬件计时器范围之内。在这里列出的计时器，可以在那些不指定计时器号的功能中被自动调度使用。未在此处列出的计时器，则必须在使用计时功能时手动指定计时器号才能用上。此预定义宏函数实际上预处理成了一个全局数组变量定义，因此只能使用一次，否则会发生重定义错误。自动调度比手动指定更方便使用，但有一定的性能开销，用户需要自行权衡。
 ## ARDUINO_ARCH_AVR
 此架构编译器必须启用C++17。打开“%LOCALAPPDATA%\Arduino15\packages\arduino\hardware\avr\<版本号>\platform.txt”并将参数“-std=gnu++11”更改为-std=gnu++17。本架构部分代码参考[MsTimer2](https://github.com/PaulStoffregen/MsTimer2)
 ### 计时器0
@@ -20,121 +34,10 @@
 - 和16位计时器一样，该计时器的COMPA、COMPB和OVF中断都可用，没有被内置函数占用。
 - 该计时器被著名的MsTimer2库占用。如果您同时在使用MsTimer2库，应避免使用2号计时器，以免发生潜在的冲突问题。
 ## ARDUINO_ARCH_SAM
-此架构包含1个主计时器和9个副计时器。主计时器不能触发中断，由内置函数使用，本库使用那9个含有中断功能的副计时器。但是`Delay`和`StartTiming`除外，这些功能因为不需要用中断实现，所以仅使用主计时器，不允许用户手动指定计时器，也不会与其它库或内置函数冲突。所有9个副计时器都是32位。本架构部分代码参考[DueTimer](https://github.com/ivanseidel/DueTimer)
+此架构包含1个主计时器和9个副计时器。主计时器不能触发中断，由内置函数使用，本库使用那9个含有中断功能的副计时器。但是`DelayTask`和`TimingTask`除外，这些功能因为不需要用中断实现，所以仅使用主计时器，不允许用户手动指定计时器，也不会与其它库或内置函数冲突。所有9个副计时器都是32位。本架构部分代码参考[DueTimer](https://github.com/ivanseidel/DueTimer)
+# 使用入门
+根据计时任务类型的不同，可能需要执行最多三个步骤以实现预期功能：获取`HardwareTimer`、创建任务、执行任务。
+## 获取`HardwareTimer`
+几乎所有任务的创建都需要先获取`HardwareTimer`，例外是SAM架构上的`DelayTask`和`TimingTask`，它们使用独立的主计时器实现而不需要`HardwareTimer`。
 
-Make full use of all your hardware timers on your Arduino board. 
-
-The only library you can choose any hardware timer you like to use in your timing function. Tones, square waves, delayed tasks, timed repetitive tasks are provided as building blocks for your own sophisticated multi-timer tasks. My library hides hardware register details for you.
-
-*You must enable C++17 for your IDE. Open "%LOCALAPPDATA%\Arduino15\packages\arduino\hardware\avr\1.8.3\platform.txt" and change the argument "-std=gnu++11" to -std=gnu++17.*
-
-**Currently, for all APIs, only time length and RepeatTimes arguments can be specified at runtime. Other arguments are all template arguments, i.e., they must be known as constexprs at compiling time. I'll implement more runtime arguments if I have more free time. Pull requests are fully welcomed on my GitHub site.**
-# Timers
-All public APIs are under namespace TimersOneForAll, and require TimerCode as the first template argument. TimerCode indicates which hardware timer you want to use. Hardware timers vary by CPUs. For ATMega2560 (Arduino Mega), there're 6 timers:
-## Timer 0
-This timer is 8-bit, which means it has 2^8=256 states. It can generate COMPA and COMPB interrupts, but not OVF, because it's occupied by Arduino builtin function `millis();delay();micros();`. This means that, though functionally usable (I specially workarounded this issue in my code), this timer is the last one you want to use among all the timers. Only use it if other timers are really busy.
-## Timer 1, 3, 4, 5
-These timers are all 16-bit, with 65536 states, which means that they're more accurate than 8-bit timers. COMPA, COMPB and OVF interrupts are all available. You may want to use these timers for most scenarios.
-## Timer 2
-This timer is also 8-bit, but different from timer 0 at 3 aspects:
-- It has 7 prescalers, which is the most among all timers - all other timers have 5 prescalers available. This gives timer 2 slightly more accuracy than timer 0, but still less accurate than 16-bit timers. Avoid using it if you still have free 16-bit timers.
-- It has 3 interrupts available, COMPA, COMPB and OVF, just like 16-bit timers. None of them is occupied by builtin functions.
-- It's used by a famous timer library MsTimer2. You can't use this timer if you have MsTimer2 included.
-
-Moreover, builtin `analogWrite()` and `tone()` may dynamically occupy any of the timers listed above. You'll have to handle potential conflicts if you want to use these builtins.
-
-If you aren't using ATMega2560 CPU series, you may or may not be able to use this library. Refer to your datasheet to see if it has compatible hardware timer configurations.
-
-# Common troubleshooting
-
-If you encounter an error similar to `undefined reference to TIMSK` when linking, please check whether you have selected the correct board and whether you are using a timer that is not supported by your board.
-
-# API参考 API Reference
-```C++
-//在指定的毫秒数后触发一个计时器中断，调用你的函数。
-//Call your function with a timer interrupt after given milliseconds
-template <uint8_t TimerCode, uint16_t AfterMilliseconds>
-void DoAfter(void (*DoTask)());
-//允许运行时动态设置毫秒数
-//Specify milliseconds at runtime
-template <uint8_t TimerCode>
-void DoAfter(uint16_t AfterMilliseconds, void (*DoTask)());
-
-//每隔指定的毫秒数，无限重复调用你的函数。第一次调用也将在那个毫秒数之后发生。
-//Repetitively and infinitely call your function with a timer interrupt for each IntervalMilliseconds. The first interrupt happens after IntervalMilliseconds, too.
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, int32_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
-void RepeatAfter(void (*DoTask)())
-//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。重复全部结束后触发DoneCallback回调
-//Specify milliseconds at runtime. After all repeats done, DoneCallback is called.
-template <uint8_t TimerCode, int32_t RepeatTimes = -1, void (*DoneCallback)() = nullptr>
-void RepeatAfter(uint16_t IntervalMilliseconds, void (*DoTask)())
-//仅重复有限次数，重复全部结束后触发DoneCallback回调
-//Repeat for only RepeatTimes. After all repeats done, DoneCallback is called.
-template <uint8_t TimerCode, uint16_t IntervalMilliseconds, void (*DoneCallback)() = nullptr>
-void RepeatAfter(int32_t RepeatTimes, void (*DoTask)())
-
-//将当前时刻设为0，计量经过的毫秒数。读取MillisecondsElapsed变量来获得经过的毫秒数。可选设置MillisecondsPerTick，控制计时单位是多少毫秒
-//Set the time now as 0 and start to record time elapsed. Read MillisecondsElapsed variable to get the time elapsed.
-template <uint8_t TimerCode, uint16_t MillisecondsPerTick = 1>
-void StartTiming();
-//获取自上次调用StartTiming以来所经过的毫秒数。
-//Get MillisecondsElapsed after the last call of StartTiming.
-template <uint8_t TimerCode>
-volatile uint32_t MillisecondsElapsed;
-//设为false可以暂停计时，重新设为true可继续计时
-//Set to false can freeze MillisecondsElapsed from being ticked by the timer (lock the variable only, timer still running). Set to true to continue timing.
-template <uint8_t TimerCode>
-volatile bool Running;
-
-//在指定引脚上无限播放指定频率的音调
-//Play a tone of FrequencyHz on PinCode endlessly.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz>
-void PlayTone();
-//只播放限定的毫秒数。播放结束后触发DoneCallback回调
-//Play for only given Milliseconds. After the tone ended, DoneCallback is called.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, uint16_t Milliseconds, void (*DoneCallback)() = nullptr>
-void PlayTone();
-//允许运行时动态设置毫秒数。播放结束后触发DoneCallback回调
-//Specify milliseconds at runtime. After the tone ended, DoneCallback is called.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t FrequencyHz, void (*DoneCallback)() = nullptr>
-void PlayTone(uint16_t Milliseconds);
-
-//在引脚上生成无限循环的方波。不同于音调，这里可以指定高电平和低电平的不同时长
-//Generate an infinite sequence of square wave. The high level and low level can have different time length.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds>
-void SquareWave();
-//仅生成有限个周期数的方波。周期全部结束后触发DoneCallback回调
-//Generate the square wave for only RepeatTimes cycles. After all cycles done, DoneCallback is called.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void SquareWave();
-//允许运行时动态设置毫秒数。重复次数不指定的话则为无限重复。周期全部结束后触发DoneCallback回调
-//Specify milliseconds at runtime. After all cycles done, DoneCallback is called.
-template <uint8_t TimerCode, uint8_t PinCode, int16_t RepeatTimes, void (*DoneCallback)() = nullptr>
-void SquareWave(uint16_t HighMilliseconds, uint16_t LowMilliseconds);
-//允许运行时动态设置重复次数。重复次数不指定的话则为无限重复。
-//Specify RepeatTimes at runtime. Infinitely repeat if not specified.
-template <uint8_t TimerCode, uint8_t PinCode, uint16_t HighMilliseconds, uint16_t LowMilliseconds, void (*DoneCallback)() = nullptr>
-void SquareWave(int16_t RepeatTimes);
-
-//阻塞当前代码执行指定毫秒数
-//Block current code from running for DelayMilliseconds
-template <uint8_t TimerCode, uint16_t DelayMilliseconds>
-void Delay();
-//允许运行时动态设置毫秒数
-//Specify milliseconds at runtime
-template <uint8_t TimerCode>
-void Delay(uint16_t DelayMilliseconds);
-
-//取消指定给特定计时器的所有任务。其它计时器不受影响。
-//Abort all tasks assigned to TimerCode. Other timers won't be affected.
-template <uint8_t TimerCode>
-void ShutDown();
-//暂停指定计时器上的任务
-//Pause the task on the specified timer
-template <uint8_t TimerCode>
-void Pause();
-//继续指定计时器上的任务。如果继续一个未处于暂停状态的计时器，将产生未定义行为。
-//Continue the task on the specified timer. If you continue a timer that is not in a paused state, undefined behavior occurs.
-template <uint8_t TimerCode>
-void Continue();
-```
+你可以选择手动指定`HardwareTimer`编号，或者让本库自动为你分配。

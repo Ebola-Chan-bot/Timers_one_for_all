@@ -70,6 +70,8 @@
 		"random": "cpp",
 		"unordered_map": "cpp",
 		"fstream": "cpp",
-		"tuple": "cpp"
+		"tuple": "cpp",
+		"codecvt": "cpp",
+		"dynarray": "cpp"
 	}
 }
