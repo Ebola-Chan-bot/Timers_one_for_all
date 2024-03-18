@@ -15,4 +15,19 @@ DynamicTimingTask *DynamicTimingTask::Create(uint8_t HardwareIndex)
 {
 	return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareIndex]();
 }
+DynamicTimingTask *DynamicTimingTask::TryCreate()
+{
+	const uint8_t SoftwareIndex = AllocateSoftwareTimer();
+	if (SoftwareIndex < NumTimers)
+		return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareTimers[SoftwareIndex]]();
+	else
+		return nullptr;
+}
+DynamicTimingTask *DynamicTimingTask::TryCreate(uint8_t SoftwareIndex)
+{
+	if (TimerFree[SoftwareIndex])
+		return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareTimers[SoftwareIndex]]();
+	else
+		return nullptr;
+}
 #endif
