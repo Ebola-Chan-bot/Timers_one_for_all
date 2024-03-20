@@ -2,13 +2,13 @@
 using namespace Timers_one_for_all;
 #ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_USE_TIMER0
-ISR(TIMER0_COMPA_vect) { TimerInterrupts[0].CompareA(); }
-ISR(TIMER0_COMPB_vect) { TimerInterrupts[0].CompareB(); }
+ISR(TIMER0_COMPA_vect) { _TimerInterrupts[0].CompareA(); }
+ISR(TIMER0_COMPB_vect) { _TimerInterrupts[0].CompareB(); }
 #endif
 #define TOFA_USE_TIMER(N)                                         \
-	ISR(TIMER##N##_OVF_vect) { TimerInterrupts[N].Overflow(); }   \
-	ISR(TIMER##N##_COMPA_vect) { TimerInterrupts[N].CompareA(); } \
-	ISR(TIMER##N##_COMPB_vect) { TimerInterrupts[N].CompareB(); }
+	ISR(TIMER##N##_OVF_vect) { _TimerInterrupts[N].Overflow(); }   \
+	ISR(TIMER##N##_COMPA_vect) { _TimerInterrupts[N].CompareA(); } \
+	ISR(TIMER##N##_COMPB_vect) { _TimerInterrupts[N].CompareB(); }
 #ifdef TOFA_USE_TIMER1
 TOFA_USE_TIMER(1);
 #endif
@@ -27,7 +27,7 @@ TOFA_USE_TIMER(5);
 #endif
 namespace Timers_one_for_all
 {
-	TimerInterrupt TimerInterrupts[NumTimers];
+	_TimerInterrupt _TimerInterrupts[_NumHardwareTimers];
 	bool TimerFree[NumTimers] = {
 #ifdef TOFA_USE_TIMER0
 		true,

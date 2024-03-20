@@ -33,9 +33,9 @@ namespace Timers_one_for_all
 		virtual Tick GetTicks() const = 0;
 	};
 	template <typename TimerType, typename T = std::make_integer_sequence<uint8_t, TimerType::NumPrescalers - 1>>
-	constexpr uint8_t SwitchThreshold[TimerType::NumPrescalers];
+	constexpr uint8_t _SwitchThreshold[TimerType::NumPrescalers - 1];
 	template <typename TimerType, uint8_t... Index>
-	constexpr uint8_t SwitchThreshold<TimerType, std::integer_sequence<uint8_t, Index...>>[TimerType::NumPrescalers] = {0, TimerType::Prescalers[Index + 1] / TimerType::Prescalers[Index]...};
+	constexpr uint8_t _SwitchThreshold<TimerType, std::integer_sequence<uint8_t, Index...>>[TimerType::NumPrescalers - 1] = {1 << TimerType::Prescalers[Index + 1] - TimerType::Prescalers[Index]...};
 	// 此类在编译器确定硬件计时器。额外指定构造/析构时是否占用/释放对应的软件号。
 	template <uint8_t HardwareIndex, bool SetSoftwareTimer = false>
 	struct StaticTimingTask : public DynamicTimingTask
@@ -43,11 +43,13 @@ namespace Timers_one_for_all
 		void Start() const override
 		{
 			HardwareTimer<HardwareIndex>.TCNT = 0;
-			HardwareTimer<HardwareIndex>.TCCRB = PrescalerIndex = 1;
-			HardwareTimer<HardwareIndex>.TIFR = UINT8_MAX;
+			HardwareTimer<HardwareIndex>.TCCRB = 1;
+			HardwareTimer<HardwareIndex>.TCCRA = 0;
+			PrescalerIndex = 0;
+			HardwareTimer<HardwareIndex>.TIFR = -1;
 			HardwareTimer<HardwareIndex>.TIMSK = 1 << TOIE1;
 			OverflowCount = 0;
-			TimerInterrupts[HardwareIndex].Overflow = [this]()
+			_TimerInterrupts[HardwareIndex].Overflow = [this]()
 			{ this->OverflowIsr(); };
 		}
 		void Stop() const override
@@ -56,29 +58,77 @@ namespace Timers_one_for_all
 		}
 		void Continue() const override
 		{
-			HardwareTimer<HardwareIndex>.TCCRB = PrescalerIndex;
+			HardwareTimer<HardwareIndex>.TCCRB = PrescalerIndex + 1;
 		}
 		~StaticTimingTask()
 		{
 			HardwareTimer<HardwareIndex>.TIMSK = 0;
-			if(SetSoftwareTimer)
-			{
-				
-			}
+			if (SetSoftwareTimer)
+				FreeHardwareTimer(HardwareIndex);
 		}
 
 	protected:
 		Tick GetTicks() const override
 		{
-
+			return (OverflowCount << 16) + HardwareTimer<HardwareIndex>.TCNT << HardwareTimer1::Prescalers[PrescalerIndex];
 		}
 		void OverflowIsr()
 		{
-			if (++OverflowCount == SwitchThreshold<HardwareTimer1>[PrescalerIndex])
+			if (++OverflowCount == _SwitchThreshold<HardwareTimer1>[PrescalerIndex])
 			{
+				HardwareTimer<HardwareIndex>.TCCRB = ++PrescalerIndex + 1;
 				OverflowCount = 1;
-				if (++PrescalerIndex == HardwareTimer1::NumPrescalers)
-					TimerInterrupts[HardwareIndex].Overflow = [this]()
+				if (PrescalerIndex == HardwareTimer1::NumPrescalers - 1)
+					_TimerInterrupts[HardwareIndex].Overflow = [this]()
+					{ this->OverflowCount++; };
+			}
+		}
+	};
+	template <bool SetSoftwareTimer>
+	struct StaticTimingTask<0, SetSoftwareTimer> : public DynamicTimingTask
+	{
+		void Start() const override
+		{
+			HardwareTimer<0>.TCNT = 0;
+			HardwareTimer<0>.TCCRB = 1;
+			HardwareTimer<0>.TCCRA = 0;
+			HardwareTimer<0>.OCRA = -1;
+			PrescalerIndex = 0;
+			HardwareTimer<0>.TIFR = -1;
+			HardwareTimer<0>.TIMSK = 1 << OCIE0A;
+			OverflowCount = 0;
+			_TimerInterrupts[0].CompareA = [this]()
+			{ this->OverflowIsr(); };
+		}
+		void Stop() const override
+		{
+			HardwareTimer<0>.TCCRB = 0;
+		}
+		void Continue() const override
+		{
+			HardwareTimer<0>.TCCRB = PrescalerIndex + 1;
+		}
+		~StaticTimingTask()
+		{
+			HardwareTimer<0>.TIMSK = 0;
+			if (SetSoftwareTimer)
+				FreeHardwareTimer(0);
+		}
+
+	protected:
+		Tick GetTicks() const override
+		{
+			const uint8_t TCNT = HardwareTimer<0>.TCNT;
+			return (TCNT == UINT8_MAX ? OverflowCount - 1 : OverflowCount << 8) + TCNT << HardwareTimer0::Prescalers[PrescalerIndex];
+		}
+		void OverflowIsr()
+		{
+			if (++OverflowCount == _SwitchThreshold<HardwareTimer0>[PrescalerIndex])
+			{
+				HardwareTimer<0>.TCCRB = ++PrescalerIndex + 1;
+				OverflowCount = 1;
+				if (PrescalerIndex == HardwareTimer0::NumPrescalers - 1)
+					_TimerInterrupts[0].CompareA = [this]()
 					{ this->OverflowCount++; };
 			}
 		}
