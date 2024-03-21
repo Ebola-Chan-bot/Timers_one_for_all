@@ -3,11 +3,12 @@
 #include <chrono>
 #include <functional>
 #include <dynarray>
+#include <utility>
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
 	// 所有可用的硬件计时器编号。此数组的索引即是软件号，值是硬件号。
-	constexpr uint8_t HardwareTimers[] = {
+	constexpr uint8_t _HardwareTimers[] = {
 #ifdef TOFA_USE_TIMER0
 		0,
 #endif
@@ -36,35 +37,12 @@ namespace Timers_one_for_all
 		8,
 #endif
 	};
-	constexpr uint8_t _NumHardwareTimers =
-#ifdef ARDUINO_ARCH_AVR
-		6
-#endif
-#ifdef ARDUINO_ARCH_SAN
-		9
-#endif
-		;
 	// 可用的计时器个数。
-	constexpr uint8_t NumTimers = std::extent<decltype(HardwareTimers)>::value;
-	struct _TimerInterrupt
-	{
-		std::function<void()> Overflow;
-		std::function<void()> CompareA;
-		std::function<void()> CompareB;
-	};
-	extern _TimerInterrupt _TimerInterrupts[_NumHardwareTimers];
-	// 计时器能够支持的最小的计时单位
-	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
-	// 指示每个软件计时器是否空闲的逻辑值。此数组用于自动调度，也可以辅助用户手动调度。
-	extern bool TimerFree[NumTimers];
-	// 返回值是计时器的软件号，范围[0,NumTimers)。使用HardwareTimers数组以将软件号映射为硬件号。如果没有空闲的计时器，返回NumTimers。
-	uint8_t AllocateSoftwareTimer();
-	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
-	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerFree[SoftwareIndex] = true; }
+	constexpr uint8_t NumTimers = std::extent<decltype(_HardwareTimers)>::value;
 	template <uint8_t Hardware, uint8_t Software = 0>
 	struct _GetSoftware
 	{
-		static constexpr uint8_t value = Hardware == HardwareTimers[Software] ? Software : _GetSoftware<Hardware, Software + 1>::value;
+		static constexpr uint8_t value = Hardware == _HardwareTimers[Software] ? Software : _GetSoftware<Hardware, Software + 1>::value;
 	};
 	template <uint8_t Hardware>
 	struct _GetSoftware<Hardware, NumTimers>
@@ -74,23 +52,36 @@ namespace Timers_one_for_all
 	template <uint8_t Hardware = 0, uint8_t Software = 0>
 	struct _MaxHardware
 	{
-		static constexpr uint8_t value = _MaxHardware<max(Hardware, HardwareTimers[Software]), Software + 1>::value;
+		static constexpr uint8_t value = _MaxHardware<max(Hardware, _HardwareTimers[Software]), Software + 1>::value;
 	};
 	template <uint8_t Hardware>
 	struct _MaxHardware<Hardware, NumTimers>
 	{
 		static constexpr uint8_t value = Hardware;
 	};
-	template <typename T = std::make_integer_sequence<uint8_t, _MaxHardware<>::value>>
+	template <typename T = std::make_integer_sequence<uint8_t, _MaxHardware<>::value + 1>>
 	struct _HardwareToSoftware;
 	template <uint8_t... Hardware>
 	struct _HardwareToSoftware<std::integer_sequence<uint8_t, Hardware...>>
 	{
 		static constexpr uint8_t value[sizeof...(Hardware)] = {_GetSoftware<Hardware>::value...};
 	};
-	// 释放指定的硬件计时器。会自动计算其软件号并设置TimerFree。
-	inline void FreeHardwareTimer(uint8_t HardwareIndex) { FreeSoftwareTimer(_HardwareToSoftware<>::value[HardwareIndex]); }
+	// 计时器能够支持的最小的计时单位
+	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
+	// 指示每个软件计时器是否空闲的逻辑值。此数组用于自动调度，也可以辅助用户手动调度。
+	extern bool TimerFree[NumTimers];
+	// 返回值是计时器的软件号，范围[0,NumTimers)。使用HardwareTimers数组以将软件号映射为硬件号。如果没有空闲的计时器，返回NumTimers。
+	uint8_t AllocateSoftwareTimer();
+	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
+	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerFree[SoftwareIndex] = true; }
 #ifdef ARDUINO_ARCH_AVR
+	struct _TimerInterrupt
+	{
+		std::function<void()> Overflow;
+		std::function<void()> CompareA;
+		std::function<void()> CompareB;
+	};
+	extern _TimerInterrupt _TimerInterrupts[NumTimers];
 	struct _CommonPrescalers
 	{
 		// 使用左移运算应用预分频
@@ -115,7 +106,7 @@ namespace Timers_one_for_all
 	};
 	// 必须使用此模板的特化版本，非特化版本不允许实例化
 	template <uint8_t HardwareIndex>
-	constexpr auto HardwareTimer = []()
+	constexpr auto _HardwareTimer = []()
 	{
 		static_assert(HardwareIndex != HardwareIndex, "不可用的计时器号");
 		return 0;
@@ -126,11 +117,11 @@ namespace Timers_one_for_all
 	{
 	};
 	template <>
-	constexpr HardwareTimer0 HardwareTimer<0>{TCCR0A, TCCR0B, TIFR0, TIMSK0, 1 << WGM01, TCNT0, OCR0A, OCR0B};
+	constexpr HardwareTimer0 _HardwareTimer<0>{TCCR0A, TCCR0B, TIFR0, TIMSK0, 1 << WGM01, TCNT0, OCR0A, OCR0B};
 #endif
 #ifdef TOFA_USE_TIMER1
 	template <>
-	constexpr HardwareTimer1 HardwareTimer<1>{TCCR1A, TCCR1B, TIFR1, TIMSK1, 1 << WGM12, TCNT1, OCR1A, OCR1B};
+	constexpr HardwareTimer1 _HardwareTimer<1>{TCCR1A, TCCR1B, TIFR1, TIMSK1, 1 << WGM12, TCNT1, OCR1A, OCR1B};
 #endif
 #ifdef TOFA_USE_TIMER2
 	// AVR架构的2号计时器特殊类型
@@ -141,19 +132,67 @@ namespace Timers_one_for_all
 		static constexpr uint8_t NumPrescalers = std::extent_v<decltype(Prescalers)>;
 	};
 	template <>
-	constexpr HardwareTimer2 HardwareTimer<2>{TCCR2A, TCCR2B, TIFR2, TIMSK2, 1 << WGM21, TCNT2, OCR2A, OCR2B};
+	constexpr HardwareTimer2 _HardwareTimer<2>{TCCR2A, TCCR2B, TIFR2, TIMSK2, 1 << WGM21, TCNT2, OCR2A, OCR2B};
 #endif
 #ifdef TOFA_USE_TIMER3
 	template <>
-	constexpr HardwareTimer1 HardwareTimer<3>{TCCR3A, TCCR3B, TIFR3, TIMSK3, 1 << WGM32, TCNT3, OCR3A, OCR3B};
+	constexpr HardwareTimer1 _HardwareTimer<3>{TCCR3A, TCCR3B, TIFR3, TIMSK3, 1 << WGM32, TCNT3, OCR3A, OCR3B};
 #endif
 #ifdef TOFA_USE_TIMER4
 	template <>
-	constexpr HardwareTimer1 HardwareTimer<4>{TCCR4A, TCCR4B, TIFR4, TIMSK4, 1 << WGM42, TCNT4, OCR4A, OCR4B};
+	constexpr HardwareTimer1 _HardwareTimer<4>{TCCR4A, TCCR4B, TIFR4, TIMSK4, 1 << WGM42, TCNT4, OCR4A, OCR4B};
 #endif
 #ifdef TOFA_USE_TIMER5
 	template <>
-	constexpr HardwareTimer1 HardwareTimer<5>{TCCR5A, TCCR5B, TIFR5, TIMSK5, 1 << WGM52, TCNT5, OCR5A, OCR5B};
+	constexpr HardwareTimer1 _HardwareTimer<5>{TCCR5A, TCCR5B, TIFR5, TIMSK5, 1 << WGM52, TCNT5, OCR5A, OCR5B};
 #endif
+	template <uint8_t SoftwareIndex>
+	constexpr auto SoftwareTimer = _HardwareTimer<_HardwareTimers[SoftwareIndex]>;
+#endif
+#ifdef ARDUINO_ARCH_SAM
+	constexpr struct HardwareTimer
+	{
+		TcChannel &Channel;
+		IRQn_Type irq;
+	} SoftwareTimers[] = {
+#ifdef TOFA_USE_TIMER0
+		{TC0->TC_CHANNEL[0], TC0_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER1
+		{TC0->TC_CHANNEL[1], TC1_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER2
+		{TC0->TC_CHANNEL[2], TC2_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER3
+		{TC1->TC_CHANNEL[0], TC3_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER4
+		{TC1->TC_CHANNEL[1], TC4_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER5
+		{TC1->TC_CHANNEL[2], TC5_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER6
+		{TC2->TC_CHANNEL[0], TC6_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER7
+		{TC2->TC_CHANNEL[1], TC7_IRQn},
+#endif
+#ifdef TOFA_USE_TIMER8
+		{TC2->TC_CHANNEL[2], TC8_IRQn},
+#endif
+	};
+	template <typename T = std::make_integer_sequence<uint8_t, NumTimers>>
+	struct _TimerInterrupt;
+	template <uint8_t... SoftwareIndex>
+	struct _TimerInterrupt<std::integer_sequence<uint8_t, SoftwareIndex...>>
+	{
+		std::function<void()> Callback;
+		_TimerInterrupt(uint8_t SoftwareIndex);
+		static _TimerInterrupt<> Interrupts[NumTimers];
+	};
+	template <uint8_t... SoftwareIndex>
+	_TimerInterrupt<> _TimerInterrupt<std::integer_sequence<uint8_t, SoftwareIndex...>>::Interrupts[NumTimers] = {SoftwareIndex...};
 #endif
 }

@@ -1,32 +1,32 @@
 #include "TimingTask.hpp"
 #ifdef ARDUINO_ARCH_AVR
-#include <map>
 using namespace Timers_one_for_all;
-template <uint8_t HardwareIndex, bool SetSoftwareIndex>
-DynamicTimingTask *StaticCreate()
+template <typename T = std::make_integer_sequence<uint8_t, NumTimers>>
+struct Creators;
+template <uint8_t... SoftwareIndex>
+struct Creators<std::integer_sequence<uint8_t, SoftwareIndex...>>
 {
-	return new StaticTimingTask<HardwareIndex, false>();
-}
-template <bool SetSoftwareIndex, typename T>
-std::map<uint8_t, DynamicTimingTask *(*)()> StaticCreators;
-template <bool SetSoftwareIndex, uint8_t... SoftwareIndex>
-std::map<uint8_t, DynamicTimingTask *(*)()> StaticCreators<SetSoftwareIndex, std::integer_sequence<uint8_t, SoftwareIndex...>>{{HardwareTimers[SoftwareIndex], StaticCreate<HardwareTimers[SoftwareIndex], SetSoftwareIndex>}...};
-DynamicTimingTask *DynamicTimingTask::Create(uint8_t HardwareIndex)
+	static constexpr DynamicTimingTask *(*Static[NumTimers])() = {[]() -> DynamicTimingTask *
+																  { return new StaticTimingTask<SoftwareIndex, false>; }...};
+	static constexpr DynamicTimingTask *(*Dynamic[NumTimers])() = {[]() -> DynamicTimingTask *
+																   { return new StaticTimingTask<SoftwareIndex, true>; }...};
+};
+DynamicTimingTask *DynamicTimingTask::Create(uint8_t SoftwareIndex)
 {
-	return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareIndex]();
+	return Creators<>::Static[SoftwareIndex]();
 }
 DynamicTimingTask *DynamicTimingTask::TryCreate()
 {
 	const uint8_t SoftwareIndex = AllocateSoftwareTimer();
 	if (SoftwareIndex < NumTimers)
-		return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareTimers[SoftwareIndex]]();
+		return Creators<>::Dynamic[SoftwareIndex]();
 	else
 		return nullptr;
 }
 DynamicTimingTask *DynamicTimingTask::TryCreate(uint8_t SoftwareIndex)
 {
 	if (TimerFree[SoftwareIndex])
-		return StaticCreators<false, std::make_integer_sequence<uint8_t, NumTimers>>[HardwareTimers[SoftwareIndex]]();
+		return Creators<>::Dynamic[SoftwareIndex]();
 	else
 		return nullptr;
 }
