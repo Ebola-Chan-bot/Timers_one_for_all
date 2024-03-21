@@ -36,6 +36,9 @@ namespace Timers_one_for_all
 #ifdef TOFA_USE_TIMER8
 		8,
 #endif
+#ifdef TOFA_USE_SYSTICK
+		9,
+#endif
 	};
 	// 可用的计时器个数。
 	constexpr uint8_t NumTimers = std::extent<decltype(_HardwareTimers)>::value;
@@ -69,19 +72,19 @@ namespace Timers_one_for_all
 	// 计时器能够支持的最小的计时单位
 	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 	// 指示每个软件计时器是否空闲的逻辑值。此数组用于自动调度，也可以辅助用户手动调度。
-	extern bool TimerFree[NumTimers];
 	// 返回值是计时器的软件号，范围[0,NumTimers)。使用HardwareTimers数组以将软件号映射为硬件号。如果没有空闲的计时器，返回NumTimers。
 	uint8_t AllocateSoftwareTimer();
-	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
-	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerFree[SoftwareIndex] = true; }
 #ifdef ARDUINO_ARCH_AVR
-	struct _TimerInterrupt
+	struct TimerState
 	{
 		std::function<void()> Overflow;
 		std::function<void()> CompareA;
 		std::function<void()> CompareB;
+		bool TimerFree = true;
 	};
-	extern _TimerInterrupt _TimerInterrupts[NumTimers];
+	extern TimerState TimerStates[NumTimers];
+	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
+	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerStates[SoftwareIndex].TimerFree = true; }
 	struct _CommonPrescalers
 	{
 		// 使用左移运算应用预分频
@@ -150,11 +153,11 @@ namespace Timers_one_for_all
 	constexpr auto SoftwareTimer = _HardwareTimer<_HardwareTimers[SoftwareIndex]>;
 #endif
 #ifdef ARDUINO_ARCH_SAM
-	constexpr struct HardwareTimer
+	constexpr struct PeripheralTimer
 	{
 		TcChannel &Channel;
 		IRQn_Type irq;
-	} SoftwareTimers[] = {
+	} PeripheralTimers[] = {
 #ifdef TOFA_USE_TIMER0
 		{TC0->TC_CHANNEL[0], TC0_IRQn},
 #endif
@@ -184,15 +187,18 @@ namespace Timers_one_for_all
 #endif
 	};
 	template <typename T = std::make_integer_sequence<uint8_t, NumTimers>>
-	struct _TimerInterrupt;
+	struct TimerState;
 	template <uint8_t... SoftwareIndex>
-	struct _TimerInterrupt<std::integer_sequence<uint8_t, SoftwareIndex...>>
+	struct TimerState<std::integer_sequence<uint8_t, SoftwareIndex...>>
 	{
-		std::function<void()> Callback;
-		_TimerInterrupt(uint8_t SoftwareIndex);
-		static _TimerInterrupt<> Interrupts[NumTimers];
+		std::function<void()> InterruptHandler;
+		bool TimerFree = true;
+		TimerState(uint8_t SoftwareIndex);
+		static TimerState<> TimerStates[NumTimers];
 	};
 	template <uint8_t... SoftwareIndex>
-	_TimerInterrupt<> _TimerInterrupt<std::integer_sequence<uint8_t, SoftwareIndex...>>::Interrupts[NumTimers] = {SoftwareIndex...};
+	TimerState<> TimerState<std::integer_sequence<uint8_t, SoftwareIndex...>>::TimerStates[NumTimers] = {SoftwareIndex...};
+	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
+	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerState<>::TimerStates[SoftwareIndex].TimerFree = true; }
 #endif
 }

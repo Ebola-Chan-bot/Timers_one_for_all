@@ -1,6 +1,7 @@
 #pragma once
 #include "Kernel.hpp"
 #include <limits>
+#include <Arduino.h>
 namespace Timers_one_for_all
 {
 #ifdef ARDUINO_ARCH_AVR
@@ -37,7 +38,7 @@ namespace Timers_one_for_all
 	constexpr uint8_t _SwitchThreshold[TimerType::NumPrescalers - 1];
 	template <typename TimerType, uint8_t... Index>
 	constexpr uint8_t _SwitchThreshold<TimerType, std::integer_sequence<uint8_t, Index...>>[TimerType::NumPrescalers - 1] = {1 << TimerType::Prescalers[Index + 1] - TimerType::Prescalers[Index]...};
-	// 此类可以直接无参构造，模板参数需要指定计时器号。构造不会导致计时器忙碌，用户如有需求只能手动设置TimerBusy。可选将模板参数TimerFree设为true，以在析构时使计时器空闲。
+	// 此类在编译器确定要使用的计时器。可以直接无参构造，模板参数需要指定计时器号。构造不会导致计时器忙碌，用户如有需求只能手动设置TimerBusy。可选将模板参数TimerFree设为true，以在析构时使计时器空闲。
 	template <uint8_t SoftwareIndex, bool FreeTimer = false>
 	struct StaticTimingTask : public DynamicTimingTask
 	{
@@ -142,5 +143,35 @@ namespace Timers_one_for_all
 		}
 	};
 #endif
+#ifdef ARDUINO_ARCH_SAM
+	// 此类在运行时动态分配计时器。使用Create或TryCreate获取对象指针。使用delete删除成功构造的对象，删除时会自动终止任务。
+	struct DynamicTimingTask
+	{
+		// 在Start之前调用此方法是未定义行为
+		template <typename _Rep, typename _Period>
+		void GetTiming(std::chrono::duration<_Rep, _Period> &Time) const
+		{
+			return std::chrono::duration_cast<std::chrono::duration<_Rep, _Period>>(GetTicks());
+		}
+		// 清零并启动/重启计时器
+		virtual void Start() const;
+		// 停止计时器。已记录的时间不会丢失，可以调用Continue继续计时。
+		virtual void Stop() const;
+		// 继续已停止的计时器。在Start之前调用此方法是未定义行为
+		virtual void Continue() const;
+		// 析构时将会自动终止任务。
+		virtual ~DynamicTimingTask() {}
+		// 使用指定的计时器创建任务。不检查是否空闲，不会使计时器忙碌。指定不可用的编号是未定义行为。指定正在执行其他任务的计时器是未定义行为。使用此方法意味着用户决定手动调度计时器，可以获得比自动调度更高的性能，一般不应当与自动调度方法一起使用。使用此方法创建的对象，析构时也不会使计时器空闲。
+		static DynamicTimingTask *Create(uint8_t SoftwareIndex);
+		// 尝试占用一个计时器以创建任务。如果没有空闲的计时器，返回nullptr。使用此方法创建的对象，析构时会使计时器空闲。
+		static DynamicTimingTask *TryCreate();
+		// 尝试占用指定的计时器创建任务。如果计时器忙碌或无效，返回nullptr。使用此方法创建的对象，析构时会使计时器空闲。
+		static DynamicTimingTask *TryCreate(uint8_t SoftwareIndex);
 
+	protected:
+		size_t OverflowCount;
+		uint8_t PrescalerClock;
+		virtual Tick GetTicks() const;
+	};
+#endif
 }

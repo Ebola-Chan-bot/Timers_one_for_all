@@ -25,7 +25,7 @@ DynamicTimingTask *DynamicTimingTask::TryCreate()
 }
 DynamicTimingTask *DynamicTimingTask::TryCreate(uint8_t SoftwareIndex)
 {
-	if (TimerFree[SoftwareIndex])
+	if (TimerStates[SoftwareIndex].TimerFree)
 		return Creators<>::Dynamic[SoftwareIndex]();
 	else
 		return nullptr;
