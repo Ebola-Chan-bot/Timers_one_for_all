@@ -7,8 +7,8 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
-	// 所有可用的硬件计时器编号。此数组的索引即是软件号，值是硬件号。
-	constexpr uint8_t _HardwareTimers[] = {
+	// 使用此数组将软件号索引到硬件号
+	constexpr uint8_t SoftwareToHardware[] = {
 #ifdef TOFA_USE_TIMER0
 		0,
 #endif
@@ -41,11 +41,11 @@ namespace Timers_one_for_all
 #endif
 	};
 	// 可用的计时器个数。
-	constexpr uint8_t NumTimers = std::extent<decltype(_HardwareTimers)>::value;
+	constexpr uint8_t NumTimers = std::extent<decltype(SoftwareToHardware)>::value;
 	template <uint8_t Hardware, uint8_t Software = 0>
 	struct _GetSoftware
 	{
-		static constexpr uint8_t value = Hardware == _HardwareTimers[Software] ? Software : _GetSoftware<Hardware, Software + 1>::value;
+		static constexpr uint8_t value = Hardware == SoftwareToHardware[Software] ? Software : _GetSoftware<Hardware, Software + 1>::value;
 	};
 	template <uint8_t Hardware>
 	struct _GetSoftware<Hardware, NumTimers>
@@ -55,7 +55,7 @@ namespace Timers_one_for_all
 	template <uint8_t Hardware = 0, uint8_t Software = 0>
 	struct _MaxHardware
 	{
-		static constexpr uint8_t value = _MaxHardware<max(Hardware, _HardwareTimers[Software]), Software + 1>::value;
+		static constexpr uint8_t value = _MaxHardware<max(Hardware, SoftwareToHardware[Software]), Software + 1>::value;
 	};
 	template <uint8_t Hardware>
 	struct _MaxHardware<Hardware, NumTimers>
@@ -69,12 +69,27 @@ namespace Timers_one_for_all
 	{
 		static constexpr uint8_t value[sizeof...(Hardware)] = {_GetSoftware<Hardware>::value...};
 	};
+	// 使用此数组将硬件号（有效的）索引到软件号。无效的硬件号将索引到NumTimers
+	constexpr const uint8_t (&HardwareToSoftware)[_MaxHardware<>::value + 1] = _HardwareToSoftware<>::value;
 	// 计时器能够支持的最小的计时单位
 	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 	// 指示每个软件计时器是否空闲的逻辑值。此数组用于自动调度，也可以辅助用户手动调度。
 	// 返回值是计时器的软件号，范围[0,NumTimers)。使用HardwareTimers数组以将软件号映射为硬件号。如果没有空闲的计时器，返回NumTimers。
 	uint8_t AllocateSoftwareTimer();
+	template <uint8_t SoftwareIndex>
+	constexpr uint8_t _CheckSoftwareIndex()
+	{
+		static_assert(SoftwareIndex < NumTimers, "指定的计时器软件号超出范围");
+		return SoftwareIndex;
+	}
+	template <uint8_t HardwareIndex>
+	constexpr uint8_t _CheckHardwareIndex()
+	{
+		static_assert(HardwareIndex <= _MaxHardware<>::value && HardwareToSoftware[HardwareIndex] < NumTimers, "指定的硬件计时器不存在或未启用");
+		return HardwareIndex;
+	}
 #ifdef ARDUINO_ARCH_AVR
+	// 记录每个软件计时器的中断回调和空闲状态
 	struct TimerState
 	{
 		std::function<void()> Overflow;
@@ -82,6 +97,7 @@ namespace Timers_one_for_all
 		std::function<void()> CompareB;
 		bool TimerFree = true;
 	};
+	// 记录每个软件计时器的中断回调和空闲状态
 	extern TimerState TimerStates[NumTimers];
 	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
 	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerStates[SoftwareIndex].TimerFree = true; }
@@ -149,8 +165,6 @@ namespace Timers_one_for_all
 	template <>
 	constexpr HardwareTimer1 _HardwareTimer<5>{TCCR5A, TCCR5B, TIFR5, TIMSK5, 1 << WGM52, TCNT5, OCR5A, OCR5B};
 #endif
-	template <uint8_t SoftwareIndex>
-	constexpr auto SoftwareTimer = _HardwareTimer<_HardwareTimers[SoftwareIndex]>;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 	constexpr struct PeripheralTimer
