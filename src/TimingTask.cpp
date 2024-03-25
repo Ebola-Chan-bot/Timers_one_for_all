@@ -7,9 +7,9 @@ template <uint8_t... SoftwareIndex>
 struct Creators<std::integer_sequence<uint8_t, SoftwareIndex...>>
 {
 	static constexpr DynamicTimingTask *(*Static[NumTimers])() = {[]() -> DynamicTimingTask *
-																  { return new StaticTimingTask<SoftwareIndex, false>; }...};
+																  { return new StaticTimingTask<SoftwareToHardware[SoftwareIndex], false>; }...};
 	static constexpr DynamicTimingTask *(*Dynamic[NumTimers])() = {[]() -> DynamicTimingTask *
-																   { return new StaticTimingTask<SoftwareIndex, true>; }...};
+																   { return new StaticTimingTask<SoftwareToHardware[SoftwareIndex], true>; }...};
 };
 DynamicTimingTask *DynamicTimingTask::Create(uint8_t SoftwareIndex)
 {
