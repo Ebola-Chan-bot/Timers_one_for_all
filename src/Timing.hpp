@@ -4,6 +4,34 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
+	struct TimingProcess : public IProcess
+	{
+		// 在Terminate后调用此方法是未定义行为
+		void Pause() const override;
+		// 在Terminate后调用此方法是未定义行为
+		void Continue() const override;
+		// 终止进程。取决于创建进程的方法，此方法可能会也可能不会将计时器设为空闲。
+		void Terminate() override;
+		template <typename _Rep, typename _Period>
+		void GetTiming(std::chrono::duration<_Rep, _Period> &Time) const;
+	};
+	struct TimingTask : public ITask
+	{
+		// 自动分配空闲计时器创建进程，将使分配到的计时器忙碌，进程终止后使计时器空闲。如果没有空闲的计时器，返回nullptr
+		const IProcess *StartProcess() const override;
+		// 使用指定计时器创建进程，不检查计时器忙闲状态。如果有其它进程运行在此计时器上，将导致未定义行为。此方法占用的计时器不会被设为忙碌状态，因此可能参与以后的自动分配。此方法创建的进程终止后，也不会自动将计时器设为空闲。指定计时器的忙闲状态由调用方负责管理。
+		const IProcess *StartProcess(uint8_t SoftwareTimer) const override;
+		TimingProcess StartTiming() const;
+		TimingProcess StartTiming(uint8_t SoftwareTimer) const;
+	};
+	struct TimingTask
+	{
+		constexpr TimingTask(uint8_t HardwareIndex);
+		static constexpr TimingTask Create(uint8_t SoftwareIndex);
+		static TimingTask *TryCreate();
+		static TimingTask *TryCreate(uint8_t SoftwareIndex);
+		TimingProcess StartProcess();
+	};
 	// 此类在运行时动态分配计时器。使用Create或TryCreate获取对象指针。使用delete删除成功构造的对象，删除时会自动终止任务。此类在AVR架构上是抽象类，不允许直接构造对象。在SAM架构上可以无参构造，但不同于Create或TryCreate，直接构造得到的对象将使用系统计时器而非外周计时器执行任务。
 	struct DynamicTimingTask
 	{

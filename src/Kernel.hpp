@@ -7,6 +7,23 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
+	struct IProcess
+	{
+		// 在Terminate后调用此方法是未定义行为
+		virtual void Pause() const = 0;
+		// 在Terminate后调用此方法是未定义行为
+		virtual void Continue() const = 0;
+		// 终止进程。取决于创建进程的方法，此方法可能会也可能不会将计时器设为空闲。
+		virtual void Terminate() = 0;
+		virtual ~IProcess() {}
+	};
+	struct ITask
+	{
+		// 自动分配空闲计时器创建进程，将使分配到的计时器忙碌，进程终止后使计时器空闲。如果没有空闲的计时器，返回nullptr
+		virtual const IProcess *StartProcess() const = 0;
+		// 使用指定计时器创建进程，不检查计时器忙闲状态。如果有其它进程运行在此计时器上，将导致未定义行为。此方法占用的计时器不会被设为忙碌状态，因此可能参与以后的自动分配。此方法创建的进程终止后，也不会自动将计时器设为空闲。指定计时器的忙闲状态由调用方负责管理。
+		virtual const IProcess *StartProcess(uint8_t SoftwareTimer) const = 0;
+	};
 	// 使用此数组将软件号索引到硬件号
 	constexpr uint8_t SoftwareToHardware[] = {
 #ifdef TOFA_USE_TIMER0
