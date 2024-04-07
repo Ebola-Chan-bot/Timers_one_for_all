@@ -7,22 +7,31 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
+	// 所有进程的抽象类，只应通过指针使用，不允许拷贝和移动
 	struct IProcess
 	{
-		// 在Terminate后调用此方法是未定义行为
+		// 暂停进程，不会导致终止。暂停已暂停的进程不做任何事。某些进程可能在析构前自动终止。暂停已终止的进程是未定义行为。
 		virtual void Pause() const = 0;
-		// 在Terminate后调用此方法是未定义行为
+		// 继续已暂停的进程。继续未暂停的进程不做任何事。某些进程可能在析构前自动终止。继续已终止的进程是未定义行为。
 		virtual void Continue() const = 0;
-		// 终止进程。取决于创建进程的方法，此方法可能会也可能不会将计时器设为空闲。
-		virtual void Terminate() = 0;
-		virtual ~IProcess() {}
+		// 对指针使用delete操作符以立即终止进程
+		virtual ~IProcess() = default;
+		// 由于对象的析构与进程终止捆绑，不允许对象的拷贝，以免发生意外的进程终止
+		IProcess(const IProcess &) = delete;
+		// 由于对象的析构与进程终止捆绑，不允许对象的拷贝，以免发生意外的进程终止
+		IProcess &operator=(const IProcess &) = delete;
+		// 指示进程是否未终止。某些进程可能在析构前自动终止。已终止的进程对象，即使析构也不会被再次终止。暂停不是终止。
+		constexpr bool Unterminated() { return _Unterminated; }
+
+	protected:
+		bool _Unterminated = true;
 	};
 	struct ITask
 	{
 		// 自动分配空闲计时器创建进程，将使分配到的计时器忙碌，进程终止后使计时器空闲。如果没有空闲的计时器，返回nullptr
-		virtual const IProcess *StartProcess() const = 0;
-		// 使用指定计时器创建进程，不检查计时器忙闲状态。如果有其它进程运行在此计时器上，将导致未定义行为。此方法占用的计时器不会被设为忙碌状态，因此可能参与以后的自动分配。此方法创建的进程终止后，也不会自动将计时器设为空闲。指定计时器的忙闲状态由调用方负责管理。
-		virtual const IProcess *StartProcess(uint8_t SoftwareTimer) const = 0;
+		virtual IProcess *StartProcess() const = 0;
+		// 使用指定计时器创建进程，不检查计时器忙闲状态。如果有其它进程运行在此计时器上，将导致未定义行为。此方法占用的计时器不会被设为忙碌状态，因此可能参与以后的自动分配，这将导致未定义行为。此方法创建的进程终止后，也不会自动将计时器设为空闲。指定计时器的忙闲状态由调用方负责管理。
+		virtual IProcess *StartProcess(uint8_t SoftwareTimer) const = 0;
 	};
 	// 使用此数组将软件号索引到硬件号
 	constexpr uint8_t SoftwareToHardware[] = {
