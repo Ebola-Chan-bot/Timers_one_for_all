@@ -15,7 +15,7 @@
 #endif
 namespace Timers_one_for_all
 {
-	enum class HardwareTimer
+	enum class HardwareTimer : size_t
 	{
 #ifdef TOFA_TIMER0
 		Timer0,
@@ -53,16 +53,20 @@ namespace Timers_one_for_all
 	{
 		Successful_operation,
 		Invalid_timer,
+		Timer_already_paused,
+		Timer_still_running,
+		Null_pointer_specified,
+		All_timers_busy,
 	};
 	// 查询计时器是否忙碌
 	Exception IsTimerBusy(HardwareTimer, bool &TimerBusy);
-	// 暂停计时器，而不将其设为空闲
+	// 暂停计时器，而不将其设为空闲。暂停已暂停的计时器将返回Timer_already_paused
 	Exception Pause(HardwareTimer);
-	// 继续已暂停的计时器
+	// 继续已暂停的计时器。继续未暂停的计时器将返回Timer_still_running
 	Exception Continue(HardwareTimer);
 	// 停止计时器并将其设为空闲
 	Exception Stop(HardwareTimer);
-	// 使用指定Timer开始计时
+	// 使用指定Timer开始计时。如果计时器有其它任务在运行，将覆盖之。
 	Exception StartTiming(HardwareTimer);
 	// 分配空闲Timer开始计时
 	Exception StartTiming(HardwareTimer *);
@@ -70,12 +74,14 @@ namespace Timers_one_for_all
 	Exception GetTiming(HardwareTimer, Tick &);
 	// 获取指定Timer已经记录的时长
 	template <typename _Rep, typename _Period>
-	inline Exception GetTiming(HardwareTimer Timer, std::chrono::duration<_Rep, _Period> &Time)
+	inline Exception GetTiming(HardwareTimer Timer, std::chrono::duration<_Rep, _Period> &Timing)
 	{
 		Tick TickElapsed;
 		const Exception E = GetTiming(Timer, TickElapsed);
-		Time = std::chrono::duration_cast<decltype(Time)>(TickElapsed);
-		return E;
+		if (E != Exception::Successful_operation)
+			return E;
+		Timing = std::chrono::duration_cast<decltype(Timing)>(TickElapsed);
+		return Exception::Successful_operation;
 	}
 	Exception Delay(Tick, HardwareTimer);
 	Exception Delay(Tick);
