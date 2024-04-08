@@ -3,13 +3,13 @@ using namespace Timers_one_for_all;
 #ifdef ARDUINO_ARCH_AVR
 
 #ifdef TOFA_USE_TIMER0
-ISR(TIMER0_COMPA_vect) { TimerStates[_HardwareToSoftware<>::value[0]].CompareA(); }
-ISR(TIMER0_COMPB_vect) { TimerStates[_HardwareToSoftware<>::value[0]].CompareB(); }
+ISR(TIMER0_COMPA_vect) { _TimerStates[_HardwareToSoftware<>::value[0]].CompareA(); }
+ISR(TIMER0_COMPB_vect) { _TimerStates[_HardwareToSoftware<>::value[0]].CompareB(); }
 #endif
 #define TOFA_USE_TIMER(N)                                                                   \
-	ISR(TIMER##N##_OVF_vect) { TimerStates[_HardwareToSoftware<>::value[N]].Overflow(); }   \
-	ISR(TIMER##N##_COMPA_vect) { TimerStates[_HardwareToSoftware<>::value[N]].CompareA(); } \
-	ISR(TIMER##N##_COMPB_vect) { TimerStates[_HardwareToSoftware<>::value[N]].CompareB(); }
+	ISR(TIMER##N##_OVF_vect) { _TimerStates[_HardwareToSoftware<>::value[N]].Overflow(); }   \
+	ISR(TIMER##N##_COMPA_vect) { _TimerStates[_HardwareToSoftware<>::value[N]].CompareA(); } \
+	ISR(TIMER##N##_COMPB_vect) { _TimerStates[_HardwareToSoftware<>::value[N]].CompareB(); }
 #ifdef TOFA_USE_TIMER1
 TOFA_USE_TIMER(1);
 #endif
@@ -63,14 +63,14 @@ namespace Timers_one_for_all
 	uint8_t AllocateSoftwareTimer()
 	{
 		for (uint8_t T = 0; T < NumTimers; ++T)
-			if (TimerStates[T].TimerFree)
+			if (_TimerStates[T].TimerFree)
 			{
-				TimerStates[T].TimerFree = false;
+				_TimerStates[T].TimerFree = false;
 				return T;
 			}
 		return NumTimers;
 	}
-	TimerState TimerStates[NumTimers];
+	_TimerState _TimerStates[NumTimers];
 #endif
 #ifdef ARDUINO_ARCH_SAM
 	uint8_t AllocateSoftwareTimer()

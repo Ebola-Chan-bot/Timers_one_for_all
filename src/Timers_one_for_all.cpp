@@ -2,6 +2,42 @@
 #include <Arduino.h>
 #include <map>
 using namespace Timers_one_for_all;
+template <uint8_t... Values>
+using U8Sequence = std::integer_sequence<uint8_t, Values...>;
+template <uint8_t First, typename T>
+struct U8SequencePrepend;
+template <uint8_t First, uint8_t... Rest>
+struct U8SequencePrepend<First, U8Sequence<Rest...>>
+{
+	using type = U8Sequence<First, Rest...>;
+};
+template <typename T>
+struct U8SequenceDiff;
+template <uint8_t First, uint8_t Second, uint8_t... Rest>
+struct U8SequenceDiff<U8Sequence<First, Second, Rest...>>
+{
+	using Unheaded = U8SequencePrepend<Second - First, U8SequenceDiff<U8Sequence<Second, Rest...>>::Unheaded>::type;
+	using type = U8SequencePrepend<First, Unheaded>::type;
+};
+template <uint8_t First>
+struct U8SequenceDiff<U8Sequence<First>>
+{
+	using Unheaded = U8Sequence<>;
+	using type = U8Sequence<First>;
+};
+template <typename T>
+struct PrescalerDiff;
+template <uint8_t... Diff>
+struct PrescalerDiff<U8Sequence<Diff...>>
+{
+	static constexpr uint8_t ShiftDiffs[] = {Diff...};
+};
+template <uint8_t... BitShift>
+struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<BitShift...>>::type>
+{
+	static constexpr uint8_t BitShifts[] = {BitShift...};
+	static constexpr uint8_t NumPrescalers = sizeof...(BitShift);
+};
 #ifdef ARDUINO_ARCH_AVR
 struct TimerBase
 {
@@ -9,12 +45,14 @@ struct TimerBase
 	volatile uint8_t &TCCRA;
 	volatile uint8_t &TCCRB;
 	volatile uint8_t &TIFR;
+	uint8_t NumBits;
+	virtual uint16_t GetTCNT() const = 0;
 	virtual void ClearTCNT() const = 0;
 	virtual void UseOverflow() const
 	{
 		TIMSK = 1 << TOIE0;
 	}
-	constexpr TimerBase(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR) : TIMSK(TIMSK), TCCRA(TCCRA), TCCRB(TCCRB), TIFR(TIFR) {}
+	constexpr TimerBase(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, uint8_t NumBits) : TIMSK(TIMSK), TCCRA(TCCRA), TCCRB(TCCRB), TIFR(TIFR), NumBits(NumBits) {}
 };
 template <typename T>
 struct TypedCounter : public TimerBase
@@ -26,15 +64,13 @@ struct TypedCounter : public TimerBase
 	{
 		TCNT = 0;
 	}
-	constexpr TypedCounter(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, volatile T &TCNT, volatile T &OCRA, volatile T &OCRB) : TimerBase(TIMSK, TCCRA, TCCRB, TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
+	uint16_t GetTCNT() const override
+	{
+		return TCNT;
+	}
+	constexpr TypedCounter(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, volatile T &TCNT, volatile T &OCRA, volatile T &OCRB) : TimerBase(TIMSK, TCCRA, TCCRB, TIFR, sizeof(T) * 8), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
 };
-struct CommonPrescalers
-{
-	// 使用左移运算应用预分频
-	static constexpr uint8_t PrescalerShift[] = {3, 3, 2, 2};
-	static constexpr uint8_t NumPrescalers = std::extent_v<decltype(PrescalerShift)>;
-};
-struct TimerType0 : public TypedCounter<uint8_t>, public CommonPrescalers
+struct TimerType0 : public TypedCounter<uint8_t>, public PrescalerType<0, 3, 6, 8, 10>
 {
 	void UseOverflow() const override
 	{
@@ -43,14 +79,12 @@ struct TimerType0 : public TypedCounter<uint8_t>, public CommonPrescalers
 	}
 	constexpr TimerType0(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, volatile uint8_t &TCNT, volatile uint8_t &OCRA, volatile uint8_t &OCRB) : TypedCounter<uint8_t>(TIMSK, TCCRA, TCCRB, TIFR, TCNT, OCRA, OCRB) {}
 };
-struct TimerType1 : public TypedCounter<uint16_t>, public CommonPrescalers
+struct TimerType1 : public TypedCounter<uint16_t>, public PrescalerType<0, 3, 6, 8, 10>
 {
 	constexpr TimerType1(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, volatile uint16_t &TCNT, volatile uint16_t &OCRA, volatile uint16_t &OCRB) : TypedCounter<uint16_t>(TIMSK, TCCRA, TCCRB, TIFR, TCNT, OCRA, OCRB) {}
 };
-struct TimerType2 : public TypedCounter<uint8_t>
+struct TimerType2 : public TypedCounter<uint8_t>, public PrescalerType<0, 3, 5, 6, 7, 8, 10>
 {
-	static constexpr uint8_t PrescalerShift[] = {3, 2, 1, 1, 1, 2};
-	static constexpr uint8_t NumPrescalers = std::extent_v<decltype(PrescalerShift)>;
 	constexpr TimerType2(volatile uint8_t &TIMSK, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIFR, volatile uint8_t &TCNT, volatile uint8_t &OCRA, volatile uint8_t &OCRB) : TypedCounter<uint8_t>(TIMSK, TCCRA, TCCRB, TIFR, TCNT, OCRA, OCRB) {}
 };
 static struct
@@ -174,6 +208,16 @@ Exception AllocateTimer(HardwareTimer *Timer)
 			return Exception::Successful_operation;
 	return Exception::All_timers_busy;
 }
+inline bool IsTimer2(HardwareTimer Timer)
+{
+	return
+#ifdef TOFA_TIMER2
+		Timer == HardwareTimer::Timer2
+#else
+		false
+#endif
+		;
+}
 Exception Timers_one_for_all::StartTiming(HardwareTimer Timer)
 {
 	TOFA_CHECKTIMER;
@@ -183,8 +227,7 @@ Exception Timers_one_for_all::StartTiming(HardwareTimer Timer)
 	T->TCCRA = 0;
 	T->UseOverflow();
 	TimerStates[(size_t)Timer].OverflowCount = 0;
-#ifdef TOFA_TIMER2
-	if (Timer == HardwareTimer::Timer2)
+	if (IsTimer2(Timer))
 		TimerStates[(size_t)Timer].OVFCOMPA = []()
 		{
 			auto &TS = TimerStates[(size_t)HardwareTimer::Timer2];
@@ -200,7 +243,6 @@ Exception Timers_one_for_all::StartTiming(HardwareTimer Timer)
 			}
 		};
 	else
-#endif
 		TimerStates[(size_t)Timer].OVFCOMPA = [Timer]()
 		{
 			auto &TS = TimerStates[(size_t)Timer];
@@ -228,8 +270,9 @@ Exception Timers_one_for_all::StartTiming(HardwareTimer *Timer)
 Exception Timers_one_for_all::GetTiming(HardwareTimer Timer, Tick &Timing)
 {
 	TOFA_CHECKTIMER;
-	TimerStates[(size_t)Timer].OverflowCount
-	AvrTimers[(size_t)Timer]->GetTCNT()
+	const TimerBase *T = AvrTimers[(size_t)Timer];
+	Timing = Tick(((uint64_t)TimerStates[(size_t)Timer].OverflowCount << T->NumBits) + T->GetTCNT() << T->TCCRB);
+	return Exception::Successful_operation;
 }
 #endif
 #ifdef ARDUINO_ARCH_SAM

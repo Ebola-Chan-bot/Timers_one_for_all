@@ -116,7 +116,7 @@ namespace Timers_one_for_all
 	}
 #ifdef ARDUINO_ARCH_AVR
 	// 记录每个软件计时器的中断回调和空闲状态
-	struct TimerState
+	struct _TimerState
 	{
 		std::function<void()> Overflow;
 		std::function<void()> CompareA;
@@ -124,9 +124,9 @@ namespace Timers_one_for_all
 		bool TimerFree = true;
 	};
 	// 记录每个软件计时器的中断回调和空闲状态
-	extern TimerState TimerStates[NumTimers];
+	extern _TimerState _TimerStates[NumTimers];
 	// 将指定软件号的计时器标记为空闲，使其可以被再分配，但不会停止任何执行中的进程。输入已空闲的软件号不做任何事。输入大于等于NumTimers的无效软件号是未定义行为。
-	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { TimerStates[SoftwareIndex].TimerFree = true; }
+	inline void FreeSoftwareTimer(uint8_t SoftwareIndex) { _TimerStates[SoftwareIndex].TimerFree = true; }
 	struct _CommonPrescalers
 	{
 		// 使用左移运算应用预分频

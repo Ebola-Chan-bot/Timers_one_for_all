@@ -47,7 +47,6 @@ namespace Timers_one_for_all
 #ifdef TOFA_SYSTIMER
 		SysTimer,
 #endif
-		NumTimers,
 	};
 	enum class Exception
 	{
