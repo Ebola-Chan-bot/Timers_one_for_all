@@ -57,29 +57,92 @@ namespace Timers_one_for_all
 		uint8_t Clock;
 		std::function<void()> OVFCOMPA;
 		std::function<void()> COMPB;
+		std::function<void()> DoneCallback;
 		uint32_t OverflowCount;
 		uint32_t OverflowTargetA;
 		uint32_t OverflowTargetB;
+		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
 	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 	constexpr uint64_t InfiniteRepeat = -1;
+	enum class Exception
+	{
+		Successful_operation,
+		Timer_already_paused,
+		Timer_not_paused,
+	};
 	struct TimerClass
 	{
+		//检查计时器是否忙碌。暂停的计时器也属于忙碌。
 		bool Busy() const { return TIMSK; }
-		void Pause() const;
-		void Continue() const;
+		//暂停计时器。暂停一个已暂停的计时器将返回Timer_already_paused
+		Exception Pause() const;
+		//继续计时器。继续一个未暂停的计时器将返回Timer_not_paused
+		Exception Continue() const;
+		//终止计时器并设为空闲。一旦终止，任务将不能恢复。
 		void Stop() const { TIMSK = 0; }
+		//开始计时任务。稍后可用GetTiming获取已记录的时间。
 		virtual void StartTiming() const = 0;
 		virtual Tick GetTiming() const = 0;
+		//获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
 		virtual void Delay(Tick) const = 0;
+		//阻塞指定的时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。
 		template <typename T>
 		void Delay(T Duration) const { Delay(std::chrono::duration_cast<Tick>(Duration)); }
 		virtual void DoAfter(Tick After, std::function<void()> Do) const = 0;
+		//在指定时间后执行指定任务。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务
 		template <typename T>
 		void DoAfter(T After, std::function<void()> Do) const { DoAfter(std::chrono::duration_cast<Tick>(After), Do); }
+		virtual void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
+		//每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。
+		template <typename T>
+		void RepeatEvery(
+			T Every, std::function<void()> Do, uint64_t RepeatTimes = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
+		{
+			RepeatEvery(std::chrono::duration_cast<Tick>(Every), Do, RepeatTimes, DoneCallback);
+		}
+		//每隔指定时间就重复执行任务，第一次执行也在指定时间之后，但仅持续
+		template <typename T>
+		void RepeatEvery(
+			T Every, std::function<void()> Do, T RepeatDuration, std::function<void()> DoneCallback = []() {}) const
+		{
+			RepeatEvery(std::chrono::duration_cast<Tick>(Every), Do, RepeatDuration / Every, DoneCallback);
+		}
+		virtual void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const = 0;
+		template <typename T>
+		void DoubleRepeat(
+			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
+		{
+			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), DoA, std::chrono::duration_cast<Tick>(AfterB), DoB, NumHalfPeriods, DoneCallback)
+		}
+		template <typename T>
+		void DoubleRepeat(
+			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, T RepeatDuration, std::function<void()> DoneCallback = []() {}) const
+		{
+			const T FullPeriod = AfterA + AfterB;
+			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), DoA, std::chrono::duration_cast<Tick>(AfterB), DoB, uint64_t(RepeatDuration / FullPeriod) * 2 + uint64_t(RepeatDuration % FullPeriod / AfterA), DoneCallback)
+		}
+		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
+		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
+		template <typename T>
+		void RandomRepeat(
+			std::function<T()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
+		{
+			RandomRepeat([RandomGenerator]()
+						 { return std::chrono::duration_cast<Tick>(RandomGenerator()); },
+						 Do, RepeatTimes, DoneCallback);
+		}
+		template <typename T>
+		void RandomRepeat(
+			std::function<T()> RandomGenerator, std::function<void()> Do, T RepeatDuration, std::function<void()> DoneCallback = []() {}) const
+		{
+			RandomRepeat([RandomGenerator]()
+						 { return std::chrono::duration_cast<Tick>(RandomGenerator()); },
+						 Do, std::chrono::duration_cast<Tick>(RepeatDuration), DoneCallback);
+		}
 
 	protected:
 		_TimerState &State;
