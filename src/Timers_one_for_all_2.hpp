@@ -84,7 +84,6 @@ namespace Timers_one_for_all
 		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
-		virtual void Delay(Tick) const = 0;
 		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。
 		template <typename T>
 		void Delay(T Duration) const { Delay(std::chrono::duration_cast<Tick>(Duration)); }
@@ -137,6 +136,7 @@ namespace Timers_one_for_all
 	protected:
 		constexpr TimerClass(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR) : State(State), TCCRA(TCCRA), TCCRB(TCCRB), TIMSK(TIMSK), TIFR(TIFR) {}
 		virtual Tick GetTiming() const = 0;
+		virtual void Delay(Tick) const = 0;
 		virtual void DoAfter(Tick After, std::function<void()> Do) const = 0;
 		virtual void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
 		virtual void RepeatEvery(Tick Every, std::function<void()> Do, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
@@ -160,6 +160,7 @@ namespace Timers_one_for_all
 		constexpr TimerClass0(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint8_t &TCNT, uint8_t &OCRA, uint8_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
 		void StartTiming() const override;
 		Tick GetTiming() const override;
+		void Delay(Tick) const override;
 	};
 	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], (uint8_t &)TCCR0A, (uint8_t &)TCCR0B, (uint8_t &)TIMSK0, (uint8_t &)TIFR0, (uint8_t &)TCNT0, (uint8_t &)OCR0A, (uint8_t &)OCR0B);
 #endif
@@ -167,6 +168,8 @@ namespace Timers_one_for_all
 	{
 		constexpr TimerClass1(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint16_t &TCNT, uint16_t &OCRA, uint16_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
 		void StartTiming() const override;
+		Tick GetTiming() const override;
+		void Delay(Tick) const override;
 	};
 #ifdef TOFA_TIMER1
 	constexpr TimerClass1 HardwareTimer1(_TimerStates[(size_t)TimerEnum::Timer1], (uint8_t &)TCCR1A, (uint8_t &)TCCR1B, (uint8_t &)TIMSK1, (uint8_t &)TIFR1, (uint16_t &)TCNT1, (uint16_t &)OCR1A, (uint16_t &)OCR1B);
@@ -176,6 +179,8 @@ namespace Timers_one_for_all
 	{
 		constexpr TimerClass2(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint8_t &TCNT, uint8_t &OCRA, uint8_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
 		void StartTiming() const override;
+		Tick GetTiming() const override;
+		void Delay(Tick) const override;
 	};
 	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], (uint8_t &)TCCR2A, (uint8_t &)TCCR2B, (uint8_t &)TIMSK2, (uint8_t &)TIFR2, (uint8_t &)TCNT2, (uint8_t &)OCR2A, (uint8_t &)OCR2B);
 #endif

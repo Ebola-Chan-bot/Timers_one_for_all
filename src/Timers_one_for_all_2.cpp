@@ -29,6 +29,22 @@ struct U8SequenceDiff<U8Sequence<First>>
 {
 	using type = U8Sequence<>;
 };
+// 输入预分频器应排除起始0
+template <typename T, uint8_t BitIndex = 0, uint8_t PrescalerIndex = 1>
+struct BitLimit
+{
+	using type = U8SequencePrepend<PrescalerIndex, BitLimit<T, BitIndex + 1, PrescalerIndex>::type>::type;
+};
+template <uint8_t BitIndex, uint8_t PrescalerIndex, uint8_t... Rest>
+struct BitLimit<U8Sequence<BitIndex + 1, Rest...>, BitIndex, PrescalerIndex>
+{
+	using type = U8SequencePrepend<PrescalerIndex, BitLimit<U8Sequence<Rest...>, BitIndex + 1, PrescalerIndex + 1>::type>::type;
+};
+template <uint8_t BitIndex, uint8_t PrescalerIndex>
+struct BitLimit<U8Sequence<BitIndex + 1>, BitIndex, PrescalerIndex>
+{
+	using type = U8Sequence<PrescalerIndex>;
+};
 template <typename T>
 struct PrescalerDiff;
 template <uint8_t... Diff>
@@ -36,11 +52,12 @@ struct PrescalerDiff<U8Sequence<Diff...>>
 {
 	static constexpr uint8_t AdvanceFactor[] = {1 << Diff...};
 };
+// 0号是无限大预分频器，表示暂停
 template <uint8_t... BitShift>
 struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<BitShift...>>::type>
 {
-	static constexpr uint8_t BitShifts[] = {BitShift...};
-	static constexpr uint8_t NumPrescalers = sizeof...(BitShift);
+	static constexpr uint8_t BitShifts[] = {UINT8_MAX, BitShift...};
+	static constexpr uint8_t NumPrescalers = sizeof...(BitShift) + 1;
 };
 #ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_TIMER0
@@ -114,7 +131,7 @@ void StartTiming(TimerClass *Timer)
 		{
 			const uint8_t TCCRB = Timer->TCCRB++;
 			OverflowCount = 1;
-			if ((TCCRB < PrescalerType::NumPrescalers - 1))
+			if ((TCCRB < PrescalerType::NumPrescalers))
 				State.OverflowTarget = PrescalerType::AdvanceFactor[TCCRB];
 			else
 				State.OVFCOMPA = [&OverflowCount]()
@@ -150,8 +167,19 @@ void TimerClass2::StartTiming() const
 	TIMSK2 = 1 << TOIE1;
 	::StartTiming<Prescaler2>((TimerClass *)this);
 }
-Tick TimerClass0::GetTiming()const
+Tick TimerClass0::GetTiming() const
 {
-	(State.OverflowCount<<8)+TCNT0
+	return Tick((State.OverflowCount << 8) + TCNT0 << Prescaler01::BitShifts[TCCR0B]);
+}
+Tick TimerClass1::GetTiming() const
+{
+	return Tick((State.OverflowCount << 16) + TCNT << Prescaler01::BitShifts[TCCRB]);
+}
+Tick TimerClass2::GetTiming() const
+{
+	return Tick((State.OverflowCount << 8) + TCNT2 << Prescaler2::BitShifts[TCCR2B]);
+}
+void TimerClass0::Delay(Tick Time) const
+{
 }
 #endif
