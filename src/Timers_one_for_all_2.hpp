@@ -84,7 +84,7 @@ namespace Timers_one_for_all
 		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
-		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。
+		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。注意，Arduino内置delay函数不能在中断中使用，但本函数确实可以在中断中使用。
 		template <typename T>
 		void Delay(T Duration) const { Delay(std::chrono::duration_cast<Tick>(Duration)); }
 		// 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务

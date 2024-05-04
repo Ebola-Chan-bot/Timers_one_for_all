@@ -56,7 +56,7 @@ struct PrescalerDiff<U8Sequence<Diff...>>
 template <uint8_t... BitShift>
 struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<BitShift...>>::type>
 {
-	static constexpr uint8_t BitShifts[] = {UINT8_MAX, BitShift...};
+	static constexpr uint8_t BitShifts[] = {-1, BitShift...};
 	static constexpr uint8_t NumPrescalers = sizeof...(BitShift) + 1;
 };
 #ifdef ARDUINO_ARCH_AVR
@@ -120,7 +120,6 @@ template <typename PrescalerType>
 void StartTiming(TimerClass *Timer)
 {
 	Timer->TIFR = -1;
-	interrupts();
 	Timer->State.OverflowCount = 0;
 	Timer->State.OverflowTarget = PrescalerType::AdvanceFactor[0];
 	Timer->State.OVFCOMPA = [Timer]()
@@ -141,7 +140,6 @@ void StartTiming(TimerClass *Timer)
 }
 void TimerClass0::StartTiming() const
 {
-	noInterrupts();
 	TCNT0 = 0;
 	TCCR0B = 1;
 	TCCR0A = 0;
@@ -151,7 +149,6 @@ void TimerClass0::StartTiming() const
 }
 void TimerClass1::StartTiming() const
 {
-	noInterrupts();
 	TCNT = 0;
 	TCCRB = 1;
 	TCCRA = 0;
@@ -160,7 +157,6 @@ void TimerClass1::StartTiming() const
 }
 void TimerClass2::StartTiming() const
 {
-	noInterrupts();
 	TCNT2 = 0;
 	TCCR2B = 1;
 	TCCR2A = 0;
@@ -179,7 +175,30 @@ Tick TimerClass2::GetTiming() const
 {
 	return Tick((State.OverflowCount << 8) + TCNT2 << Prescaler2::BitShifts[TCCR2B]);
 }
+// 返回OverflowTarget
+template <typename Prescaler>
+uint32_t PrescalerOverflow(uint32_t Cycles, uint8_t &Clock)
+{
+	for (Clock = 1; Clock < Prescaler::NumPrescalers - 1; ++Clock)
+		if (!(Cycles >> Prescaler::BitShifts[Clock]))
+			return 0;
+	return Cycles >> Prescaler::BitShifts[Clock];
+}
 void TimerClass0::Delay(Tick Time) const
 {
+	if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCRB))
+	{
+		TCNT0 = 0;
+		TIMSK0 = 0;
+		OCR0A = 0;
+		TIFR0 = -1;
+		TCCR0A = 0;
+		OCR0B = (Time.count() >> Prescaler01::BitShifts[Prescaler01::NumPrescalers]) & UINT8_MAX;
+		volatile uint32_t &OverflowCount = State.OverflowCount;
+		OverflowCount = 0;
+		State.OVFCOMPA = [&OverflowCount]()
+		{ ++OverflowCount; };
+		State.COMPB = [&OverflowCount]
+	}
 }
 #endif
