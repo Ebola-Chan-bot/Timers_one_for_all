@@ -52,12 +52,18 @@ struct PrescalerDiff<U8Sequence<Diff...>>
 {
 	static constexpr uint8_t AdvanceFactor[] = {1 << Diff...};
 };
+template <typename T>
+struct BitsToPrescaler_s;
+template <uint8_t... Bit>
+struct BitsToPrescaler_s<U8Sequence<Bit...>>
+{
+	static constexpr uint8_t BitsToPrescaler[] = {Bit...};
+};
 // 0号是无限大预分频器，表示暂停
 template <uint8_t... BitShift>
-struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<BitShift...>>::type>
+struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<0, BitShift...>>::type>, public BitsToPrescaler_s<BitLimit<U8Sequence<BitShift...>>::type>
 {
-	static constexpr uint8_t BitShifts[] = {-1, BitShift...};
-	static constexpr uint8_t NumPrescalers = sizeof...(BitShift) + 1;
+	static constexpr uint8_t BitShifts[] = {-1, 0, BitShift...};
 };
 #ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_TIMER0
@@ -100,22 +106,8 @@ TimerIsr(4);
 #ifdef TOFA_TIMER5
 TimerIsr(5);
 #endif
-using Prescaler01 = PrescalerType<0, 3, 6, 8, 10>;
-using Prescaler2 = PrescalerType<0, 3, 5, 6, 7, 8, 10>;
-void TimerClass::Pause() const
-{
-	const uint8_t Clock = TCCRB & 0b111;
-	if (Clock)
-	{
-		State.Clock = Clock;
-		TCCRB &= ~0b111;
-	}
-}
-void TimerClass::Continue() const
-{
-	if (!(TCCRB & 0b111))
-		TCCRB |= State.Clock;
-}
+using Prescaler01 = PrescalerType<3, 6, 8, 10>;
+using Prescaler2 = PrescalerType<3, 5, 6, 7, 8, 10>;
 template <typename PrescalerType>
 void StartTiming(TimerClass *Timer)
 {
@@ -130,7 +122,7 @@ void StartTiming(TimerClass *Timer)
 		{
 			const uint8_t TCCRB = Timer->TCCRB++;
 			OverflowCount = 1;
-			if ((TCCRB < PrescalerType::NumPrescalers))
+			if ((TCCRB < std::extent_v<decltype(PrescalerType::AdvanceFactor)>))
 				State.OverflowTarget = PrescalerType::AdvanceFactor[TCCRB];
 			else
 				State.OVFCOMPA = [&OverflowCount]()
@@ -177,28 +169,103 @@ Tick TimerClass2::GetTiming() const
 }
 // 返回OverflowTarget
 template <typename Prescaler>
-uint32_t PrescalerOverflow(uint32_t Cycles, uint8_t &Clock)
+uint32_t PrescalerOverflow(uint32_t Cycles, volatile uint8_t &Clock)
 {
-	for (Clock = 1; Clock < Prescaler::NumPrescalers - 1; ++Clock)
-		if (!(Cycles >> Prescaler::BitShifts[Clock]))
-			return 0;
-	return Cycles >> Prescaler::BitShifts[Clock];
+	constexpr uint8_t MaxBits = std::extent_v<decltype(Prescaler::BitsToPrescaler)>;
+	const uint8_t CycleBits = sizeof(Cycles) * 8 - 1 - __builtin_clz(Cycles);
+	if (CycleBits < MaxBits)
+	{
+		Clock = Prescaler::BitsToPrescaler[CycleBits];
+		return 0;
+	}
+	else
+		return Cycles >> Prescaler::BitShifts[Clock = Prescaler::BitsToPrescaler[MaxBits - 1]];
 }
 void TimerClass0::Delay(Tick Time) const
 {
-	if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCRB))
+	TCCR0A = 0;
+	TIFR0 = -1;
+	TCNT0 = 0;
+	uint8_t WaitFor;
+	if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCR0B))
 	{
-		TCNT0 = 0;
-		TIMSK0 = 0;
 		OCR0A = 0;
-		TIFR0 = -1;
-		TCCR0A = 0;
-		OCR0B = (Time.count() >> Prescaler01::BitShifts[Prescaler01::NumPrescalers]) & UINT8_MAX;
+		WaitFor = (Time.count() >> Prescaler01::BitShifts[std::extent_v<decltype(Prescaler01::BitShifts)> - 1]) & UINT8_MAX;
 		volatile uint32_t &OverflowCount = State.OverflowCount;
 		OverflowCount = 0;
 		State.OVFCOMPA = [&OverflowCount]()
 		{ ++OverflowCount; };
-		State.COMPB = [&OverflowCount]
+		TIMSK0 = 1 << OCIE0A;
+		while (OverflowCount < State.OverflowTarget)
+			;
+	}
+	else
+		WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
+	TIMSK0 = 0;
+	while (TCNT0 < WaitFor)
+		;
+}
+void TimerClass1::Delay(Tick Time) const
+{
+	TCCRA = 0;
+	TIFR = -1;
+	TCNT = 0;
+	uint16_t WaitFor;
+	if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Time.count() >> 16, TCCRB))
+	{
+		WaitFor = (Time.count() >> Prescaler01::BitShifts[std::extent_v<decltype(Prescaler01::BitShifts)> - 1]) & UINT16_MAX;
+		volatile uint32_t &OverflowCount = State.OverflowCount;
+		OverflowCount = 0;
+		State.OVFCOMPA = [&OverflowCount]()
+		{ ++OverflowCount; };
+		TIMSK = 1 << TOIE1;
+		while (OverflowCount < State.OverflowTarget)
+			;
+	}
+	else
+		WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
+	TIMSK = 0;
+	while (TCNT < WaitFor)
+		;
+}
+void TimerClass2::Delay(Tick Time) const
+{
+	TCCR2A = 0;
+	TIFR2 = -1;
+	TCNT2 = 0;
+	uint8_t WaitFor;
+	if (State.OverflowTarget = PrescalerOverflow<Prescaler2>(Time.count() >> 8, TCCR2B))
+	{
+		WaitFor = (Time.count() >> Prescaler2::BitShifts[std::extent_v<decltype(Prescaler2::BitShifts)> - 1]) & UINT8_MAX;
+		volatile uint32_t &OverflowCount = State.OverflowCount;
+		OverflowCount = 0;
+		State.OVFCOMPA = [&OverflowCount]()
+		{ ++OverflowCount; };
+		TIMSK0 = 1 << TOIE2;
+		while (OverflowCount < State.OverflowTarget)
+			;
+	}
+	else
+		WaitFor = Time.count() >> Prescaler2::BitShifts[TCCRB];
+	TIMSK2 = 0;
+	while (TCNT2 < WaitFor)
+		;
+}
+void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
+{
+	TCCR0A = 0;
+	TIFR0 = -1;
+	TCNT0 = 0;
+	if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(After.count() >> 8, TCCR0B))
+	{
+		OCR0A = 0;
+		_TimerState &StateReference = State;
+		StateReference.OverflowCount = 0;
+		StateReference.OVFCOMPA = [&StateReference]()
+		{
+			if (++StateReference.OverflowCount >=StateReference.OverflowTarget)
+			
+		};
 	}
 }
 #endif

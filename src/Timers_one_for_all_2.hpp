@@ -66,17 +66,27 @@ namespace Timers_one_for_all
 	constexpr uint64_t InfiniteRepeat = -1;
 	struct TimerClass
 	{
-		_TimerState &State;
-		uint8_t &TCCRA;
-		uint8_t &TCCRB;
-		uint8_t &TIMSK;
-		uint8_t &TIFR;
+		_TimerState &State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
+		volatile uint8_t &TCCRB;
+		volatile uint8_t &TIMSK;
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
 		bool Busy() const { return TIMSK; }
 		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
-		void Pause() const;
+		void Pause() const
+{
+	const uint8_t Clock = TCCRB & 0b111;
+	if (Clock)
+	{
+		State.Clock = Clock;
+		TCCRB &= ~0b111;
+	}
+}
 		// 继续计时器。继续一个未暂停的计时器将不做任何事
-		void Continue() const;
+		void Continue() const
+{
+	if (!(TCCRB & 0b111))
+		TCCRB |= State.Clock;
+}
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
 		void Stop() const { TIMSK = 0; }
 		// 开始计时任务。稍后可用GetTiming获取已记录的时间。
@@ -134,7 +144,7 @@ namespace Timers_one_for_all
 		}
 
 	protected:
-		constexpr TimerClass(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR) : State(State), TCCRA(TCCRA), TCCRB(TCCRB), TIMSK(TIMSK), TIFR(TIFR) {}
+		constexpr TimerClass(_TimerState &State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : State(State), TCCRB(TCCRB), TIMSK(TIMSK) {}
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) const = 0;
 		virtual void DoAfter(Tick After, std::function<void()> Do) const = 0;
@@ -145,53 +155,52 @@ namespace Timers_one_for_all
 		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
 		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
 	};
-	template <typename T>
-	struct _TimerBitClass : public TimerClass
-	{
-	protected:
-		T &TCNT;
-		T &OCRA;
-		T &OCRB;
-		constexpr _TimerBitClass(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, T &TCNT, T &OCRA, T &OCRB) : TimerClass(State, TCCRA, TCCRB, TIMSK, TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
-	};
 #ifdef TOFA_TIMER0
-	struct TimerClass0 : public _TimerBitClass<uint8_t>
+	struct TimerClass0 : public TimerClass
 	{
-		constexpr TimerClass0(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint8_t &TCNT, uint8_t &OCRA, uint8_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
+		constexpr TimerClass0(_TimerState &State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : TimerClass(State, TCCRB, TIMSK) {}
 		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
 	};
-	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], (uint8_t &)TCCR0A, (uint8_t &)TCCR0B, (uint8_t &)TIMSK0, (uint8_t &)TIFR0, (uint8_t &)TCNT0, (uint8_t &)OCR0A, (uint8_t &)OCR0B);
+	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], TCCR0B, TIMSK0);
 #endif
-	struct TimerClass1 : public _TimerBitClass<uint16_t>
+	struct TimerClass1 : public TimerClass
 	{
-		constexpr TimerClass1(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint16_t &TCNT, uint16_t &OCRA, uint16_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
+		volatile uint8_t &TCCRA;
+		volatile uint8_t &TIFR;
+		volatile uint16_t &TCNT;
+		volatile uint16_t &OCRA;
+		volatile uint16_t &OCRB;
+		constexpr TimerClass1(_TimerState &State, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK, volatile uint8_t &TIFR, volatile uint16_t &TCNT, volatile uint16_t &OCRA, volatile uint16_t &OCRB) : TimerClass(State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
 		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
 	};
 #ifdef TOFA_TIMER1
-	constexpr TimerClass1 HardwareTimer1(_TimerStates[(size_t)TimerEnum::Timer1], (uint8_t &)TCCR1A, (uint8_t &)TCCR1B, (uint8_t &)TIMSK1, (uint8_t &)TIFR1, (uint16_t &)TCNT1, (uint16_t &)OCR1A, (uint16_t &)OCR1B);
+	constexpr TimerClass1 HardwareTimer1(_TimerStates[(size_t)TimerEnum::Timer1], TCCR1A, TCCR1B, TIMSK1, TIFR1, TCNT1, OCR1A, OCR1B);
 #endif
 #ifdef TOFA_TIMER2
-	struct TimerClass2 : public _TimerBitClass<uint8_t>
+	struct TimerClass2 : public TimerClass
 	{
-		constexpr TimerClass2(_TimerState &State, uint8_t &TCCRA, uint8_t &TCCRB, uint8_t &TIMSK, uint8_t &TIFR, uint8_t &TCNT, uint8_t &OCRA, uint8_t &OCRB) : _TimerBitClass(State, TCCRA, TCCRB, TIMSK, TIFR, TCNT, OCRA, OCRB) {}
+		constexpr TimerClass2(_TimerState &State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : TimerClass(State, TCCRB, TIMSK) {}
 		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
 	};
-	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], (uint8_t &)TCCR2A, (uint8_t &)TCCR2B, (uint8_t &)TIMSK2, (uint8_t &)TIFR2, (uint8_t &)TCNT2, (uint8_t &)OCR2A, (uint8_t &)OCR2B);
+	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], TCCR2B, TIMSK2);
 #endif
 #ifdef TOFA_TIMER3
-	constexpr TimerClass1 HardwareTimer3(_TimerStates[(size_t)TimerEnum::Timer3], (uint8_t &)TCCR3A, (uint8_t &)TCCR3B, (uint8_t &)TIMSK3, (uint8_t &)TIFR3, (uint16_t &)TCNT3, (uint16_t &)OCR3A, (uint16_t &)OCR3B);
+	constexpr TimerClass1 HardwareTimer3(_TimerStates[(size_t)TimerEnum::Timer3], TCCR3A, TCCR3B, TIMSK3, TIFR3, TCNT3, OCR3A, OCR3B);
 #endif
 #ifdef TOFA_TIMER4
-	constexpr TimerClass1 HardwareTimer4(_TimerStates[(size_t)TimerEnum::Timer4], (uint8_t &)TCCR4A, (uint8_t &)TCCR4B, (uint8_t &)TIMSK4, (uint8_t &)TIFR4, (uint16_t &)TCNT4, (uint16_t &)OCR4A, (uint16_t &)OCR4B);
+	constexpr TimerClass1 HardwareTimer4(_TimerStates[(size_t)TimerEnum::Timer4], TCCR4A, TCCR4B, TIMSK4, TIFR4, TCNT4, OCR4A, OCR4B);
 #endif
 #ifdef TOFA_TIMER5
-	constexpr TimerClass1 HardwareTimer5(_TimerStates[(size_t)TimerEnum::Timer5], (uint8_t &)TCCR5A, (uint8_t &)TCCR5B, (uint8_t &)TIMSK5, (uint8_t &)TIFR5, (uint16_t &)TCNT5, (uint16_t &)OCR5A, (uint16_t &)OCR5B);
+	constexpr TimerClass1 HardwareTimer5(_TimerStates[(size_t)TimerEnum::Timer5], TCCR5A, TCCR5B, TIMSK5, TIFR5, TCNT5, OCR5A, OCR5B);
 #endif
 	constexpr const TimerClass *HardwareTimers[] = {
 #ifdef TOFA_TIMER0
