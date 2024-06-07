@@ -192,15 +192,13 @@ void TimerClass0::Delay(Tick Time) const
 	if (volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCR0B))
 	{
 		OCR0A = 0;
-		WaitFor = (Time.count() >> Prescaler01::MaxShift) & UINT8_MAX;
 		State.COMPA = [&OverflowCount]()
 		{ --OverflowCount; };
 		TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 		while (OverflowCount)
 			;
 	}
-	else
-		WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
+	WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
 	TIMSK0 = 1 << TOIE0;
 	while (TCNT0 < WaitFor)
 		;
@@ -213,15 +211,13 @@ void TimerClass1::Delay(Tick Time) const
 	uint16_t WaitFor;
 	if (volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 16, TCCRB))
 	{
-		WaitFor = (Time.count() >> Prescaler01::MaxShift) & UINT16_MAX;
 		State.OVF = [&OverflowCount]()
 		{ --OverflowCount; };
 		TIMSK = 1 << TOIE1;
 		while (OverflowCount)
 			;
 	}
-	else
-		WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
+	WaitFor = Time.count() >> Prescaler01::BitShifts[TCCRB];
 	TIMSK = 0;
 	while (TCNT < WaitFor)
 		;
@@ -234,15 +230,13 @@ void TimerClass2::Delay(Tick Time) const
 	uint8_t WaitFor;
 	if (volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler2>(Time.count() >> 8, TCCR2B))
 	{
-		WaitFor = (Time.count() >> Prescaler2::MaxShift) & UINT8_MAX;
 		State.OVF = [&OverflowCount]()
 		{ --OverflowCount; };
 		TIMSK2 = 1 << TOIE2;
 		while (OverflowCount)
 			;
 	}
-	else
-		WaitFor = Time.count() >> Prescaler2::BitShifts[TCCRB];
+	WaitFor = Time.count() >> Prescaler2::BitShifts[TCCRB];
 	TIMSK2 = 0;
 	while (TCNT2 < WaitFor)
 		;
@@ -251,35 +245,27 @@ void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
 {
 	if (After.count())
 	{
-		TCCR0A = 0;
-		TIFR0 = -1;
 		TCNT0 = 0;
 		if (State.OverflowCount = PrescalerOverflow<Prescaler01>(After.count() >> 8, TCCR0B))
 		{
 			OCR0A = 0;
-			OCR0B = (After.count() >> Prescaler01::MaxShift) & UINT8_MAX;
-			uint32_t &OverflowCount = State.OverflowCount;
-			State.COMPA = [&OverflowCount]()
+			State.COMPA = [this]()
 			{
-				if (!--OverflowCount)
+				if (!--State.OverflowCount)
 					TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
 			};
-			State.COMPB = [Do]()
-			{
-				TIMSK0 = 1 << TOIE0;
-				Do();
-			};
+			TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 		}
 		else
+			TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
+		OCR0B = After.count() >> Prescaler01::BitShifts[TCCR0B];
+		State.COMPB = [Do]()
 		{
-			OCR0A = After.count() >> Prescaler01::BitShifts[TCCR0B];
-			State.COMPA = [Do]()
-			{
-				TIMSK0 = 1 << TOIE0;
-				Do();
-			};
-		}
-		TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
+			TIMSK0 = 1 << TOIE0;
+			Do();
+		};
+		TCCR0A = 0;
+		TIFR0 = -1;
 	}
 	else
 		Do();
@@ -291,33 +277,23 @@ void TimerClass1::DoAfter(Tick After, std::function<void()> Do) const
 		TCCRA = 0;
 		TIFR = -1;
 		TCNT = 0;
-		volatile uint8_t &ThisTIMSK = TIMSK;
 		if (State.OverflowCount = PrescalerOverflow<Prescaler01>(After.count() >> 16, TCCRB))
 		{
-			OCRB = (After.count() >> Prescaler01::MaxShift) & UINT16_MAX;
-			uint32_t &OverflowCount = State.OverflowCount;
-			State.OVF = [&OverflowCount, &ThisTIMSK]()
+			State.OVF = [this]()
 			{
-				if (!--OverflowCount)
-					ThisTIMSK = 1 << OCIE1B;
-			};
-			State.COMPB = [&ThisTIMSK, Do]()
-			{
-				ThisTIMSK = 0;
-				Do();
+				if (!--State.OverflowCount)
+					TIMSK = 1 << OCIE1B;
 			};
 			TIMSK = 1 << TOIE1;
 		}
 		else
+			TIMSK = 1 << OCIE1B;
+		OCRB = After.count() >> Prescaler01::BitShifts[TCCRB];
+		State.COMPB = [this, Do]()
 		{
-			OCRA = After.count() >> Prescaler01::BitShifts[TCCRB];
-			State.COMPA = [&ThisTIMSK, Do]()
-			{
-				ThisTIMSK = 0;
-				Do();
-			};
-			TIMSK = 1 << OCIE1A;
-		}
+			TIMSK = 0;
+			Do();
+		};
 	}
 	else
 		Do();
@@ -331,30 +307,21 @@ void TimerClass2::DoAfter(Tick After, std::function<void()> Do) const
 		TCNT2 = 0;
 		if (State.OverflowCount = PrescalerOverflow<Prescaler2>(After.count() >> 8, TCCR2B))
 		{
-			OCR2B = (After.count() >> Prescaler2::MaxShift) & UINT8_MAX;
-			uint32_t &OverflowCount = State.OverflowCount;
-			State.OVF = [&OverflowCount]()
+			State.OVF = [this]()
 			{
-				if (!--OverflowCount)
+				if (!--State.OverflowCount)
 					TIMSK2 = 1 << OCIE2B;
-			};
-			State.COMPB = [Do]()
-			{
-				TIMSK2 = 0;
-				Do();
 			};
 			TIMSK2 = 1 << TOIE2;
 		}
 		else
+			TIMSK2 = 1 << OCIE2B;
+		OCR2B = After.count() >> Prescaler2::BitShifts[TCCR2B];
+		State.COMPB = [Do]()
 		{
-			OCR2A = After.count() >> Prescaler2::BitShifts[TCCR2B];
-			State.COMPA = [Do]()
-			{
-				TIMSK2 = 0;
-				Do();
-			};
-			TIMSK2 = 1 << OCIE2A;
-		}
+			TIMSK2 = 0;
+			Do();
+		};
 	}
 	else
 		Do();
@@ -364,33 +331,32 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 	if (RepeatTimes)
 	{
 		TCNT0 = 0;
-		if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 8, TCCR0B))
+		if (const uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 8, TCCR0B))
 		{
-			_TimerState &ThisState = State;
-			OCR0A = (Every.count() >> Prescaler01::MaxShift) & UINT8_MAX;
+			OCR0A = (Every.count() >> Prescaler01::MaxShift);
 			OCR0B = 0;
-			State.OverflowCount = State.OverflowTarget;
-			State.COMPB = [&ThisState]()
+			State.OverflowCount = OverflowTarget;
+			State.COMPB = [this]()
 			{
-				if (!--ThisState.OverflowCount)
+				if (!--State.OverflowCount)
 				{
 					TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 					TCCR0A = 1 << WGM01;
 				}
 			};
-			State.COMPA = [&ThisState, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback, OverflowTarget]()
 			{
 				TCCR0A = 0;
-				if (--ThisState.RepeatLeft)
+				if (--State.RepeatLeft)
 				{
-					ThisState.OverflowCount = ThisState.OverflowTarget;
+					State.OverflowCount = OverflowTarget;
 					TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
 				}
 				else
 					TIMSK0 = 1 << TOIE0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
-				if (!ThisState.RepeatLeft)
+				if (!State.RepeatLeft)
 					DoneCallback();
 			};
 			TCCR0A = 0;
@@ -399,14 +365,13 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		else
 		{
 			OCR0A = Every.count() >> Prescaler01::BitShifts[TCCR0B];
-			uint64_t &RepeatLeft = State.RepeatLeft;
-			State.COMPA = [&RepeatLeft, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback]()
 			{
-				if (!--RepeatLeft)
+				if (!--State.RepeatLeft)
 					TIMSK0 = 1 << TOIE0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
-				if (!RepeatLeft)
+				if (!State.RepeatLeft)
 					DoneCallback();
 			};
 			TCCR0A = 1 << WGM01;
@@ -416,39 +381,35 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		State.RepeatLeft = RepeatTimes;
 	}
 	else
-	{
-		TIMSK0 = 1 << TOIE0;
 		DoneCallback();
-	}
 }
 void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
 {
 	if (RepeatTimes)
 	{
 		TCNT = 0;
-		if (State.OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 16, TCCRB))
+		if (const uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 16, TCCRB))
 		{
-			OCRA = (Every.count() >> Prescaler01::MaxShift) & UINT16_MAX;
-			State.OverflowCount = State.OverflowTarget;
+			OCRA = (Every.count() >> Prescaler01::MaxShift);
+			State.OverflowCount = OverflowTarget;
 			State.OVF = [this]()
 			{
-				if (!--this->State.OverflowCount)
+				if (!--State.OverflowCount)
 				{
-					this->TIMSK = 1 << OCIE1A;
-					this->TCCRB = (1 << WGM12) | Prescaler01::MaxClock;
+					TIMSK = 1 << OCIE1A;
+					TCCRB = (1 << WGM12) | Prescaler01::MaxClock;
 				}
 			};
-			State.COMPA = [this, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback, OverflowTarget]()
 			{
-				this->TCCRB = Prescaler01::MaxClock;
-				_TimerState &State = this->State;
+				TCCRB = Prescaler01::MaxClock;
 				if (--State.RepeatLeft)
 				{
-					State.OverflowCount = State.OverflowTarget;
-					this->TIMSK = 1 << TOIE1;
+					State.OverflowCount = OverflowTarget;
+					TIMSK = 1 << TOIE1;
 				}
 				else
-					this->TIMSK = 0;
+					TIMSK = 0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
 				if (!State.RepeatLeft)
@@ -459,15 +420,13 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		else
 		{
 			OCRA = Every.count() >> Prescaler01::BitShifts[TCCRB];
-			uint64_t &RepeatLeft = State.RepeatLeft;
-			volatile uint8_t &ThisTIMSK = TIMSK;
-			State.COMPA = [&RepeatLeft, &ThisTIMSK, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback]()
 			{
-				if (!--RepeatLeft)
-					ThisTIMSK = 0;
+				if (!--State.RepeatLeft)
+					TIMSK = 0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
-				if (!RepeatLeft)
+				if (!State.RepeatLeft)
 					DoneCallback();
 			};
 			TCCRB |= 1 << WGM12;
@@ -478,43 +437,38 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		State.RepeatLeft = RepeatTimes;
 	}
 	else
-	{
-		TIMSK = 0;
 		DoneCallback();
-	}
 }
 void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
 {
 	if (RepeatTimes)
 	{
 		TCNT2 = 0;
-		if (State.OverflowTarget = PrescalerOverflow<Prescaler2>(Every.count() >> 8, TCCR2B))
+		if (const uint32_t OverflowTarget = PrescalerOverflow<Prescaler2>(Every.count() >> 8, TCCR2B))
 		{
-			OCR2A = (Every.count() >> Prescaler2::MaxShift) & UINT8_MAX;
-			uint32_t &OverflowCount = State.OverflowCount;
-			OverflowCount = State.OverflowTarget;
-			State.OVF = [&OverflowCount]()
+			OCR2A = (Every.count() >> Prescaler2::MaxShift);
+			State.OverflowCount = OverflowTarget;
+			State.OVF = [this]()
 			{
-				if (!--OverflowCount)
+				if (!--State.OverflowCount)
 				{
 					TIMSK2 = 1 << OCIE2A;
 					TCCR2A = 1 << WGM21;
 				}
 			};
-			_TimerState &ThisState = State;
-			State.COMPA = [&ThisState, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback, OverflowTarget]()
 			{
 				TCCR2A = 0;
-				if (--ThisState.RepeatLeft)
+				if (--State.RepeatLeft)
 				{
-					ThisState.OverflowCount = ThisState.OverflowTarget;
+					State.OverflowCount = OverflowTarget;
 					TIMSK2 = 1 << TOIE2;
 				}
 				else
 					TIMSK2 = 0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
-				if (!ThisState.RepeatLeft)
+				if (!State.RepeatLeft)
 					DoneCallback();
 			};
 			TCCR2A = 0;
@@ -523,14 +477,13 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		else
 		{
 			OCR2A = Every.count() >> Prescaler2::BitShifts[TCCR2B];
-			uint64_t &RepeatLeft = State.RepeatLeft;
-			State.COMPA = [&RepeatLeft, Do, DoneCallback]()
+			State.COMPA = [this, Do, DoneCallback]()
 			{
-				if (!--RepeatLeft)
+				if (!--State.RepeatLeft)
 					TIMSK2 = 0;
 				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
 				Do();
-				if (!RepeatLeft)
+				if (!State.RepeatLeft)
 					DoneCallback();
 			};
 			TCCR2A = 1 << WGM21;
@@ -540,16 +493,339 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		State.RepeatLeft = RepeatTimes;
 	}
 	else
-	{
-		TIMSK2 = 0;
 		DoneCallback();
-	}
 }
-void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, Tick RepeatDuration, std::function<void()> DoneCallback) const
+void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
 {
-	TCNT0 = 0;
-	if (const uint32_t OverflowTargetB = PrescalerOverflow<Prescaler01>(AfterA + AfterB >> 8, TCCRB))
+	if (NumHalfPeriods)
 	{
+		AfterB += AfterA;
+		TCNT0 = 0;
+		if (const uint32_t OverflowTargetB = PrescalerOverflow<Prescaler01>(AfterB.count() >> 8, TCCR0B))
+		{
+			const uint8_t CandidateOCRA = AfterA.count() >> Prescaler01::MaxShift; // 可能会被自动截断后8位
+			const uint8_t CandidateOCRB = AfterB.count() >> Prescaler01::MaxShift;
+			// 由于0号计时器的OVF不可用，只能OCRA用于CTC，OCRB用于溢出计数，与AB任务无关
+			if (const uint32_t OverflowTargetA = AfterA.count() >> Prescaler01::MaxShift + 8)
+			{
+				State.OverflowCount = OverflowTargetA;
+				State.COMPB = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK0 = (1 << OCIE0A) | (1 << OCIE0B) | (1 << TOIE0);
+						std::swap(State.COMPB, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetB;
+					}
+				};
+				State.COMPA = [this, CandidateOCRB, DoA, DoneCallback]()
+				{
+					if (--State.RepeatLeft)
+					{
+						TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
+						std::swap(State.COMPA, State.CandidateCOMP);
+						OCR0A = CandidateOCRB;
+					}
+					else
+						TIMSK0 = 1 << TOIE0;
+					DoA();
+					if (!State.RepeatLeft)
+						DoneCallback();
+				};
+				State.CandidateOVF = [this, OverflowTargetA]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK0 = (1 << OCIE0A) | (1 << OCIE0B) | (1 << TOIE0);
+						std::swap(State.COMPB, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetA;
+						TCCR0A = 1 << WGM01;
+					}
+				};
+				State.CandidateCOMP = [this, CandidateOCRA, DoB, DoneCallback]()
+				{
+					if (--State.RepeatLeft)
+					{
+						TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
+						std::swap(State.COMPA, State.CandidateCOMP);
+						OCR0A = CandidateOCRA;
+						TCCR0A = 0;
+					}
+					else
+						TIMSK0 = 1 << TOIE0;
+					DoB();
+					if (!State.RepeatLeft)
+						DoneCallback();
+				};
+			}
+			else
+			{
+				State.COMPA = [this, CandidateOCRB, DoA, DoneCallback]()
+				{
+					if (--State.RepeatLeft)
+					{
+						TIMSK0 = (1 << TOIE0) | (1 << OCIE0B);
+						std::swap(State.COMPA, State.CandidateCOMP);
+						OCR0A = CandidateOCRB;
+					}
+					else
+						TIMSK0 = 1 << TOIE0;
+					DoA();
+					if (!State.RepeatLeft)
+						DoneCallback();
+				};
+				State.OverflowCount = OverflowTargetB;
+				State.COMPB = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK0 = (1 << TOIE0) | (1 << OCIE0A) | (1 << OCIE0B);
+						TCCR0A = 1 << WGM01;
+						State.OverflowCount = OverflowTargetB;
+					}
+				};
+				State.CandidateCOMP = [this, CandidateOCRA, DoB, DoneCallback]()
+				{
+					if (--State.RepeatLeft)
+					{
+						OCR0A = CandidateOCRA;
+						TCCR0A = 0;
+						std::swap(State.COMPA, State.CandidateCOMP);
+					}
+					else
+						TIMSK0 = 1 << TOIE0;
+					DoB();
+					if (!State.RepeatLeft)
+						DoneCallback();
+				};
+			}
+			OCR0B = 0;
+			OCR0A = CandidateOCRA;
+			TIMSK0 = (1 << OCIE0B) | (1 << TOIE0);
+			TCCR0A = 0;
+		}
+		else
+		{
+			const uint8_t BitShift = Prescaler01::BitShifts[TCCR0B];
+			OCR0B = AfterA.count() >> BitShift;
+			State.COMPB = [this, DoA, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK0 = 1 << TOIE0;
+				DoA();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			OCR0A = AfterB.count() >> BitShift;
+			State.COMPA = [this, DoB, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK0 = 1 << TOIE0;
+				DoB();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			TCCR0A = 1 << WGM01;
+			TIMSK0 = (1 << TOIE0) | (1 << OCIE0A) | (1 << OCIE0B);
+		}
+		State.RepeatLeft = NumHalfPeriods;
+		TIFR0 = -1;
 	}
+	else
+		DoneCallback();
+}
+void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
+{
+	if (NumHalfPeriods)
+	{
+		AfterB += AfterA;
+		TCNT = 0;
+		if (const uint32_t OverflowTargetB = PrescalerOverflow<Prescaler01>(AfterB.count() >> 16, TCCRB))
+		{
+			if (const uint32_t OverflowTargetA = AfterA.count() >> Prescaler01::MaxShift + 16)
+			{
+				State.OverflowCount = OverflowTargetA;
+				TIMSK = 1 << TOIE1;
+				State.OVF = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK = (1 << OCIE1B) | (1 << TOIE1);
+						std::swap(State.OVF, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetB;
+					}
+				};
+				State.CandidateOVF = [this, OverflowTargetA]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK = (1 << OCIE1A) | (1 << TOIE1);
+						std::swap(State.OVF, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetA;
+						TCCRB = 1 << WGM12 | Prescaler01::MaxClock;
+					}
+				};
+			}
+			else
+			{
+				State.OverflowCount = OverflowTargetB;
+				TIMSK = (1 << TOIE1) | (1 << OCIE1B);
+				State.OVF = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK = (1 << TOIE1) | (1 << OCIE1A);
+						TCCRB = 1 << WGM12 | Prescaler01::MaxClock;
+					}
+				};
+			}
+			State.COMPB = [this, DoA, DoneCallback]()
+			{
+				TIMSK = --State.RepeatLeft ? 1 << TOIE1 : 0;
+				DoA();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			State.COMPA = [this, DoB, DoneCallback]()
+			{
+				if (--State.RepeatLeft)
+				{
+					TIMSK = 1 << TOIE1;
+					TCCRB = Prescaler01::MaxClock;
+				}
+				else
+					TIMSK = 0;
+				DoB();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+		}
+		else
+		{
+			State.COMPB = [this, DoA, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK = 0;
+				DoA();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			State.COMPA = [this, DoB, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK = 0;
+				DoB();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			TCCRB |= 1 << WGM12;
+			TIMSK = (1 << OCIE1A) | (1 << OCIE1B);
+		}
+		const uint8_t BitShift = Prescaler01::BitShifts[TCCRB];
+		OCRA = AfterA.count() >> BitShift;
+		OCRB = AfterB.count() >> BitShift;
+		State.RepeatLeft = NumHalfPeriods;
+		TCCRA = 0;
+		TIFR = -1;
+	}
+	else
+		DoneCallback();
+}
+void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
+{
+	if (NumHalfPeriods)
+	{
+		AfterB += AfterA;
+		TCNT2 = 0;
+		if (const uint32_t OverflowTargetB = PrescalerOverflow<Prescaler2>(AfterB.count() >> 8, TCCR2B))
+		{
+			if (const uint32_t OverflowTargetA = AfterA.count() >> Prescaler2::MaxShift + 8)
+			{
+				State.OverflowCount = OverflowTargetA;
+				TIMSK2 = 1 << TOIE2;
+				State.OVF = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK2 = (1 << OCIE2B) | (1 << TOIE2);
+						std::swap(State.OVF, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetB;
+					}
+				};
+				State.CandidateOVF = [this, OverflowTargetA]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK2 = (1 << OCIE2A) | (1 << TOIE2);
+						std::swap(State.OVF, State.CandidateOVF);
+						State.OverflowCount = OverflowTargetA;
+						TCCR2A = 1 << WGM21;
+					}
+				};
+			}
+			else
+			{
+				State.OverflowCount = OverflowTargetB;
+				TIMSK2 = (1 << TOIE2) | (1 << OCIE2B);
+				State.OVF = [this, OverflowTargetB]()
+				{
+					if (!--State.OverflowCount)
+					{
+						TIMSK2 = (1 << TOIE2) | (1 << OCIE2A);
+						TCCR2A = 1 << WGM21;
+					}
+				};
+			}
+			State.COMPB = [this, DoA, DoneCallback]()
+			{
+				TIMSK2 = --State.RepeatLeft ? 1 << TOIE2 : 0;
+				DoA();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			State.COMPA = [this, DoB, DoneCallback]()
+			{
+				if (--State.RepeatLeft)
+				{
+					TIMSK2 = 1 << TOIE2;
+					TCCR2A = 0;
+				}
+				else
+					TIMSK2 = 0;
+				DoB();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			TCCR2A = 0;
+		}
+		else
+		{
+			State.COMPB = [this, DoA, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK2 = 0;
+				DoA();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			State.COMPA = [this, DoB, DoneCallback]()
+			{
+				if (!--State.RepeatLeft)
+					TIMSK2 = 0;
+				DoB();
+				if (!State.RepeatLeft)
+					DoneCallback();
+			};
+			TCCR2A = 1 << WGM21;
+			TIMSK2 = (1 << OCIE1A) | (1 << OCIE1B);
+		}
+		const uint8_t BitShift = Prescaler2::BitShifts[TCCR2B];
+		OCR2A = AfterA.count() >> BitShift;
+		OCR2B = AfterB.count() >> BitShift;
+		State.RepeatLeft = NumHalfPeriods;
+		TIFR2 = -1;
+	}
+	else
+		DoneCallback();
 }
 #endif

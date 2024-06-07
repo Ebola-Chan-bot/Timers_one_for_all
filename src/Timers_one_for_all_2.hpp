@@ -58,8 +58,9 @@ namespace Timers_one_for_all
 		std::function<void()> OVF;
 		std::function<void()> COMPA;
 		std::function<void()> COMPB;
+		std::function<void()> CandidateOVF;
+		std::function<void()> CandidateCOMP;
 		uint32_t OverflowCount;
-		uint32_t OverflowTarget;
 		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
@@ -95,29 +96,29 @@ namespace Timers_one_for_all
 		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
-		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。注意，Arduino内置delay函数不能在中断中使用，但本函数确实可以在中断中使用。
+		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。注意，Arduino内置delay函数不能在中断中使用，但本函数确实可以在中断中使用。此方法一定会覆盖计时器的上一个任务，即使时长为0
 		template <typename T>
 		void Delay(T Duration) const { Delay(std::chrono::duration_cast<Tick>(Duration)); }
-		// 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务
+		// 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。如果延时为0，此方法直接执行Do，计时器的上一个任务不会被覆盖。
 		template <typename T>
 		void DoAfter(T After, std::function<void()> Do) const { DoAfter(std::chrono::duration_cast<Tick>(After), Do); }
-		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。
+		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。如果重复次数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 		template <typename T>
 		void RepeatEvery(
 			T Every, std::function<void()> Do, uint64_t RepeatTimes = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
 		{
 			RepeatEvery(std::chrono::duration_cast<Tick>(Every), Do, RepeatTimes, DoneCallback);
 		}
-		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。
+		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。如果持续时间为0，此方法立即执行DoneCallback（如果有），不会覆盖计时器的上一个任务。
 		template <typename T>
 		void RepeatEvery(
 			T Every, std::function<void()> Do, T RepeatDuration, std::function<void()> DoneCallback = nullptr) const
 		{
 			const T TimeLeft = RepeatDuration % Every;
-			RepeatEvery(Every, Do, RepeatDuration / Every, DoneCallback									  ? [this, TimeLeft, DoneCallback]()
-															   { this->DoAfter(TimeLeft, DoneCallback); } : []() {});
+			RepeatEvery(Every, Do, RepeatDuration / Every, DoneCallback								? [this, TimeLeft, DoneCallback]()
+															   { DoAfter(TimeLeft, DoneCallback); } : []() {});
 		}
-		//先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。
+		// 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 		template <typename T>
 		void DoubleRepeat(
 			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
@@ -126,9 +127,12 @@ namespace Timers_one_for_all
 		}
 		template <typename T>
 		void DoubleRepeat(
-			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, T RepeatDuration, std::function<void()> DoneCallback = []() {}) const
+			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, T RepeatDuration, std::function<void()> DoneCallback = nullptr) const
 		{
-			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), DoA, std::chrono::duration_cast<Tick>(AfterB), DoB, RepeatDuration, DoneCallback)
+			const T CycleLeft = RepeatDuration % (AfterA + AfterB);
+			const T HalfLeft = CycleLeft % AfterA;
+			DoubleRepeat(AfterA, DoA, AfterB, DoB, RepeatDuration / (AfterA + AfterB) * 2 + CycleLeft / AfterA, DoneCallback							? [this, HalfLeft, DoneCallback]
+																													{ DoAfter(HalfLeft, DoneCallback) } : []() {});
 		}
 		template <typename T>
 		void RandomRepeat(
@@ -154,7 +158,6 @@ namespace Timers_one_for_all
 		virtual void DoAfter(Tick After, std::function<void()> Do) const = 0;
 		virtual void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
 		virtual void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const = 0;
-		virtual void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
 		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
 		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
 	};
@@ -167,7 +170,7 @@ namespace Timers_one_for_all
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
 		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
-		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, Tick RepeatDuration, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	};
 	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], TCCR0B, TIMSK0);
 #endif
@@ -184,7 +187,7 @@ namespace Timers_one_for_all
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
 		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
-		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, Tick RepeatDuration, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	};
 #ifdef TOFA_TIMER1
 	constexpr TimerClass1 HardwareTimer1(_TimerStates[(size_t)TimerEnum::Timer1], TCCR1A, TCCR1B, TIMSK1, TIFR1, TCNT1, OCR1A, OCR1B);
@@ -198,7 +201,7 @@ namespace Timers_one_for_all
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
 		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
-		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, Tick RepeatDuration, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	};
 	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], TCCR2B, TIMSK2);
 #endif
