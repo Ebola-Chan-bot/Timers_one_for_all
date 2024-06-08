@@ -13,11 +13,18 @@
 #define TOFA_TIMER7
 #define TOFA_TIMER8
 #define TOFA_SYSTIMER
+#define TOFA_REALTIMER
 #endif
 namespace Timers_one_for_all
 {
 	enum class TimerEnum
 	{
+#ifdef TOFA_SYSTIMER
+		SysTimer,
+#endif
+#ifdef TOFA_REALTIMER
+		RealTimer,
+#endif
 #ifdef TOFA_TIMER0
 		Timer0,
 #endif
@@ -45,12 +52,11 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER8
 		Timer8,
 #endif
-#ifdef TOFA_SYSTIMER
-		SysTimer,
-#endif
 		_NumTimers
 	};
 	constexpr uint8_t NumTimers = (uint8_t)TimerEnum::_NumTimers;
+	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
+	constexpr uint64_t InfiniteRepeat = -1;
 #ifdef ARDUINO_ARCH_AVR
 	struct _TimerState
 	{
@@ -64,10 +70,10 @@ namespace Timers_one_for_all
 		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
-	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
-	constexpr uint64_t InfiniteRepeat = -1;
+#endif
 	struct TimerClass
 	{
+#ifdef ARDUINO_ARCH_AVR
 		_TimerState &State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
 		volatile uint8_t &TCCRB;
 		volatile uint8_t &TIMSK;
@@ -91,6 +97,17 @@ namespace Timers_one_for_all
 		}
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
 		void Stop() const { TIMSK = 0; }
+#endif
+#ifdef ARDUINO_ARCH_SAM
+		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
+		virtual bool Busy() const = 0;
+		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
+		virtual void Pause() const = 0;
+		// 继续计时器。继续一个未暂停的计时器将不做任何事
+		virtual void Continue() const = 0;
+		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
+		virtual void Stop() const = 0;
+#endif
 		// 开始计时任务。稍后可用GetTiming获取已记录的时间。
 		virtual void StartTiming() const = 0;
 		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
@@ -134,33 +151,18 @@ namespace Timers_one_for_all
 			DoubleRepeat(AfterA, DoA, AfterB, DoB, RepeatDuration / (AfterA + AfterB) * 2 + CycleLeft / AfterA, DoneCallback							? [this, HalfLeft, DoneCallback]
 																													{ DoAfter(HalfLeft, DoneCallback) } : []() {});
 		}
-		template <typename T>
-		void RandomRepeat(
-			std::function<T()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
-		{
-			RandomRepeat([RandomGenerator]()
-						 { return std::chrono::duration_cast<Tick>(RandomGenerator()); },
-						 Do, RepeatTimes, DoneCallback);
-		}
-		template <typename T>
-		void RandomRepeat(
-			std::function<T()> RandomGenerator, std::function<void()> Do, T RepeatDuration, std::function<void()> DoneCallback = []() {}) const
-		{
-			RandomRepeat([RandomGenerator]()
-						 { return std::chrono::duration_cast<Tick>(RandomGenerator()); },
-						 Do, std::chrono::duration_cast<Tick>(RepeatDuration), DoneCallback);
-		}
 
 	protected:
+#ifdef ARDUINO_ARCH_AVR
 		constexpr TimerClass(_TimerState &State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : State(State), TCCRB(TCCRB), TIMSK(TIMSK) {}
+#endif
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) const = 0;
 		virtual void DoAfter(Tick After, std::function<void()> Do) const = 0;
 		virtual void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
 		virtual void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const = 0;
-		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const = 0;
-		virtual void RandomRepeat(std::function<Tick()> RandomGenerator, std::function<void()> Do, Tick RepeatDuration, std::function<void()> DoneCallback) const = 0;
 	};
+#ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_TIMER0
 	struct TimerClass0 : public TimerClass
 	{
@@ -235,6 +237,92 @@ namespace Timers_one_for_all
 #endif
 	};
 #endif
+#ifdef ARDUINO_ARCH_SAM
+#ifdef TOFA_SYSTIMER
+	constexpr struct SystemTimerClass : public TimerClass
+	{
+		bool Busy() const override { return SysTick->CTRL & SysTick_CTRL_ENABLE_Msk; F_CPU}
+	} SystemTimer;
+#endif
+#ifdef TOFA_REALTIMER
+	constexpr struct RealTimerClass : public TimerClass
+	{
+	} RealTimer;
+#endif
+	constexpr struct PeripheralTimerClass : public TimerClass
+	{
+		TcChannel &Channel;
+		IRQn_Type irq;
+		bool Busy() const override { return CTRL & SysTick_CTRL_ENABLE_Msk; }
+		constexpr PeripheralTimerClass(TcChannel &Channel, IRQn_Type irq) : Channel(Channel), irq(irq) {}
+	} PeripheralTimers[] =
+		{
+#ifdef TOFA_TIMER0
+			{TC0->TC_CHANNEL[0], TC0_IRQn},
+#endif
+#ifdef TOFA_TIMER1
+			{TC0->TC_CHANNEL[1], TC1_IRQn},
+#endif
+#ifdef TOFA_TIMER2
+			{TC0->TC_CHANNEL[2], TC2_IRQn},
+#endif
+#ifdef TOFA_TIMER3
+			{TC1->TC_CHANNEL[0], TC3_IRQn},
+#endif
+#ifdef TOFA_TIMER4
+			{TC1->TC_CHANNEL[1], TC4_IRQn},
+#endif
+#ifdef TOFA_TIMER5
+			{TC1->TC_CHANNEL[2], TC5_IRQn},
+#endif
+#ifdef TOFA_TIMER6
+			{TC2->TC_CHANNEL[0], TC6_IRQn},
+#endif
+#ifdef TOFA_TIMER7
+			{TC2->TC_CHANNEL[1], TC7_IRQn},
+#endif
+#ifdef TOFA_TIMER8
+			{TC2->TC_CHANNEL[2], TC8_IRQn},
+#endif
+	};
+	constexpr const TimerClass *HardwareTimers[] =
+		{
+#ifdef TOFA_SYSTIMER
+			&SystemTimer,
+#endif
+#ifdef TOFA_REALTIMER
+			&RealTimer,
+#endif
+#ifdef TOFA_TIMER0
+			&PeripheralTimers[0],
+#endif
+#ifdef TOFA_TIMER1
+			&PeripheralTimers[1],
+#endif
+#ifdef TOFA_TIMER2
+			&PeripheralTimers[2],
+#endif
+#ifdef TOFA_TIMER3
+			&PeripheralTimers[3],
+#endif
+#ifdef TOFA_TIMER4
+			&PeripheralTimers[4],
+#endif
+#ifdef TOFA_TIMER5
+			&PeripheralTimers[5],
+#endif
+#ifdef TOFA_TIMER6
+			&PeripheralTimers[6],
+#endif
+#ifdef TOFA_TIMER7
+			&PeripheralTimers[7],
+#endif
+#ifdef TOFA_TIMER8
+			&PeripheralTimers[8],
+#endif
+	};
+#endif
 	// 如果没有空闲的计时器，返回nullptr
-	const TimerClass *AllocateIdleTimer();
+	const TimerClass *
+	AllocateIdleTimer();
 }

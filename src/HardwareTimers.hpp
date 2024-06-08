@@ -12,6 +12,7 @@
 #define TOFA_USE_TIMER7
 #define TOFA_USE_TIMER8
 #define TOFA_USE_SYSTICK
+#define TOFA_USE_REALTIMER
 #endif
 #ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_USE_TIMER0
