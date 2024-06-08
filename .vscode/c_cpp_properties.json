@@ -3,7 +3,7 @@
         {
             "name": "avr",
             "includePath": [
-                "${USERPROFILE}/Documents/Arduino/libraries/**",
+                "${USERPROFILE}/Documents/Arduino/libraries/Cpp_Standard_Library/**",
                 "${LOCALAPPDATA}/Arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino",
                 "${LOCALAPPDATA}/Arduino15/packages/arduino/hardware/avr/1.8.6/variants/mega",
                 "${LOCALAPPDATA}/Arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/avr/include"
@@ -21,7 +21,7 @@
         {
             "name": "sam",
             "includePath": [
-                "${USERPROFILE}/Documents/Arduino/libraries/**",
+                "${USERPROFILE}/Documents/Arduino/libraries/Cpp_Standard_Library/**",
                 "${LOCALAPPDATA}/Arduino15/packages/arduino/hardware/sam/1.6.12/**",
                 "${LOCALAPPDATA}/Arduino15/packages/arduino/tools/arm-none-eabi-gcc/4.8.3-2014q1/arm-none-eabi/include"
             ],
