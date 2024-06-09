@@ -274,6 +274,12 @@ namespace Timers_one_for_all
 #endif
 	struct _TimerState
 	{
+		std::function<void()> Handler = nullptr;
+		uint64_t RepeatLeft;
+	};
+	struct _PeripheralState:public _TimerState
+	{
+
 	};
 	enum class _PeripheralEnum
 	{
@@ -306,7 +312,7 @@ namespace Timers_one_for_all
 #endif
 		NumPeripherals
 	};
-	extern _TimerState _TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
+	extern _PeripheralState _TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
 	constexpr struct PeripheralTimerClass : public TimerClass
 	{
 		bool Busy() const override { return Channel.TC_SR & TC_SR_CLKSTA; }
@@ -314,10 +320,10 @@ namespace Timers_one_for_all
 		void Continue() const override;
 		void Stop() const override;
 		void StartTiming() const override;
-		constexpr PeripheralTimerClass(_TimerState &State, TcChannel &Channel, IRQn_Type irq) : State(State), Channel(Channel), irq(irq) {}
+		constexpr PeripheralTimerClass(_PeripheralState &State, TcChannel &Channel, IRQn_Type irq) : State(State), Channel(Channel), irq(irq) {}
 
 	protected:
-		_TimerState &State;
+		_PeripheralState &State;
 		TcChannel &Channel;
 		IRQn_Type irq;
 		Tick GetTiming() const override;

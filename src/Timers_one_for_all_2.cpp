@@ -7,6 +7,7 @@ const TimerClass *Timers_one_for_all::AllocateIdleTimer()
 			return HardwareTimers[T];
 	return nullptr;
 }
+// 需要测试：比较寄存器置0能否实现溢出中断？而不会一开始就中断？
 #ifdef ARDUINO_ARCH_AVR
 template <uint8_t... Values>
 using U8Sequence = std::integer_sequence<uint8_t, Values...>;
@@ -803,16 +804,14 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 #endif
 #ifdef ARDUINO_ARCH_SAM
 #ifdef TOFA_SYSTIMER
-static struct
+static struct : public _TimerState
 {
 	uint32_t LOAD;
-	uint32_t OverflowCount;
-	std::function<void()> Handler = nullptr;
 	std::function<void()> OverflowHandlerA;
 	std::function<void()> DoHandlerA;
 	std::function<void()> OverflowHandlerB;
 	std::function<void()> DoHandlerB;
-	uint64_t RepeatLeft;
+	uint32_t OverflowCount;
 } SystemState;
 int sysTickHook()
 {
@@ -1108,10 +1107,10 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 }
 #endif
 #ifdef TOFA_REALTIMER
-static struct
+static struct : public _TimerState
 {
-	uint32_t OverflowCount;
-	std::function<void()> Handler = nullptr;
+	uint16_t OverflowCount;
+	std::function<void()> CandidateHandler;
 } RealState;
 void RTT_Handler()
 {
@@ -1135,6 +1134,7 @@ void RealTimerClass::Continue() const
 {
 	if (!(RTT->RTT_MR & RTT_MR_ALMIEN) && RealState.Handler)
 		RTT->RTT_MR |= RTT_MR_ALMIEN | RTT_MR_RTTRST;
+	// 可能存在问题：RTTRST可能导致AR变成-1
 }
 void RealTimerClass::Stop() const
 {
@@ -1143,18 +1143,298 @@ void RealTimerClass::Stop() const
 }
 void RealTimerClass::StartTiming() const
 {
-	RTT->RTT_MR = 4 | RTT_MR_ALMIEN | RTT_MR_RTTRST;
+	RTT->RTT_MR = 1 | RTT_MR_ALMIEN | RTT_MR_RTTRST;
 	RTT->RTT_AR = -1;
 	RealState.OverflowCount = 0;
-	RealState.Handler=[]()
+	RealState.Handler = []()
 	{
-		if(++RealState.OverflowCount==2)
+		if (++RealState.OverflowCount == 2)
 		{
-			RTT->RTT_MR
+			const uint16_t RTPRES = RTT->RTT_MR << 1;
+			RTT->RTT_MR = RTPRES | RTT_MR_ALMIEN;
+			// 可能存在问题：MR的修改可能在RTTRST之前不会生效
+			RealState.OverflowCount = 1;
+			if (!RTPRES)
+				RealState.Handler = []()
+				{ RealState.OverflowCount++; };
 		}
+		// 可能存在问题：中断寄存器尚未清空导致中断再次触发
 	};
 	NVIC_EnableIRQ(RTT_IRQn);
 }
+using RealTick = std::chrono::duration<uint64_t, std::ratio<1, 32768>>;
+Tick RealTimerClass::GetTiming() const
+{
+	uint64_t TimerTicks = (RealState.OverflowCount + 1) << 32 + RTT->RTT_VR - RTT->RTT_AR;
+	if (const uint16_t RTPRES = RTT->RTT_MR)
+		TimerTicks *= RTPRES;
+	else
+		TimerTicks <<= 16;
+	return std::chrono::duration_cast<Tick>(RealTick(TimerTicks));
+}
+void RealTimerClass::Delay(Tick Time) const
+{
+	const uint64_t TimerTicks = std::chrono::duration_cast<RealTick>(Time).count();
+	volatile uint16_t OverflowCount = 1;
+	if (const uint32_t RTPRES = TimerTicks >> 32)
+	{
+		if ((OverflowCount += RTPRES >> 16) > 1)
+		{
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+			RTT->RTT_AR = TimerTicks >> 16;
+		}
+		else
+		{
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
+			RTT->RTT_AR = -1;
+		}
+	}
+	else
+	{
+		RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
+		RTT->RTT_AR = TimerTicks;
+	}
+	RealState.Handler = [&OverflowCount]()
+	{
+		if (!--OverflowCount)
+		{
+			RealState.Handler = nullptr;
+			RTT->RTT_MR = 0;
+		}
+	};
+	NVIC_EnableIRQ(RTT_IRQn);
+	while (OverflowCount)
+		;
+}
+void RealTimerClass::DoAfter(Tick After, std::function<void()> Do) const
+{
+	if (After.count())
+	{
+		Do = [Do]()
+		{
+			RealState.Handler = nullptr;
+			RTT->RTT_MR = 0;
+			Do();
+		};
+		const uint64_t TimerTicks = std::chrono::duration_cast<RealTick>(After).count();
+		NVIC_EnableIRQ(RTT_IRQn);
+		if (const uint32_t RTPRES = TimerTicks >> 32)
+		{
+			if (RealState.OverflowCount = RTPRES >> 16)
+			{
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+				RTT->RTT_AR = TimerTicks >> 16;
+				RealState.Handler = [Do]()
+				{
+					if (!--RealState.OverflowCount)
+						Do();
+				};
+				return;
+			}
+			else
+			{
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
+				RTT->RTT_AR = -1;
+			}
+		}
+		else
+		{
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
+			RTT->RTT_AR = TimerTicks;
+		}
+		RealState.Handler = Do;
+	}
+	else
+		Do();
+}
+void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
+{
+	if (RepeatTimes)
+	{
+		const uint64_t TimerTicks = std::chrono::duration_cast<RealTick>(Every).count();
+		if (const uint32_t RTPRES = TimerTicks >> 32)
+		{
+			if (uint16_t OverflowTarget = RTPRES >> 16)
+			{
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+				const uint32_t RTT_AR = TimerTicks >> 16;
+				RTT->RTT_AR = RTT_AR;
+				RealState.OverflowCount = ++OverflowTarget;
+				RealState.Handler = [Do, RTT_AR, OverflowTarget, DoneCallback]()
+				{
+					if (!--RealState.OverflowCount)
+					{
+						if (--RealState.RepeatLeft)
+						{
+							RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+							RTT->RTT_AR = RTT_AR; // 伪暂停算法可能修改AR，所以每次都要重新设置
+							RealState.OverflowCount = OverflowTarget;
+						}
+						else
+						{
+							RTT->RTT_MR = 0;
+							RealState.Handler = nullptr;
+						}
+						Do();
+						if (!RealState.RepeatLeft)
+							DoneCallback();
+					}
+				};
+			}
+			else
+			{
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
+				RTT->RTT_AR = -1;
+				RealState.Handler = [Do, DoneCallback]()
+				{
+					if (!--RealState.RepeatLeft)
+					{
+						RTT->RTT_MR = 0;
+						RealState.Handler = nullptr;
+					}
+					Do();
+					if (!RealState.RepeatLeft)
+						DoneCallback();
+				};
+			}
+		}
+		else
+		{
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
+			const uint32_t RTT_AR = TimerTicks;
+			RTT->RTT_AR = RTT_AR;
+			RealState.Handler = [Do, DoneCallback, RTT_AR]()
+			{
+				if (--RealState.RepeatLeft)
+					RTT->RTT_AR += RTT_AR;
+				else
+				{
+					RTT->RTT_MR = 0;
+					RealState.Handler = nullptr;
+				}
+				Do();
+				if (!RealState.RepeatLeft)
+					DoneCallback();
+			};
+		}
+		NVIC_EnableIRQ(RTT_IRQn);
+	}
+	else
+		DoneCallback();
+}
+void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
+{
+	if (NumHalfPeriods)
+	{
+		const uint64_t TimerTicksA = std::chrono::duration_cast<RealTick>(AfterA).count();
+		const uint64_t TimerTicksB = std::chrono::duration_cast<RealTick>(AfterB).count();
+		const uint64_t MaxTicks = max(TimerTicksA, TimerTicksB);
+		RealState.RepeatLeft = NumHalfPeriods;
+		NVIC_EnableIRQ(RTT_IRQn);
+		uint32_t RTPRES = MaxTicks >> 32;
+		uint32_t RTT_AR_A;
+		uint32_t RTT_AR_B;
+		if (RTPRES)
+		{
+			if (RTPRES >> 16)
+			{
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+				RTT_AR_A = TimerTicksA >> 16;
+				RTT->RTT_AR = RTT_AR_A;
+				const uint16_t OverflowTargetA = TimerTicksA >> 48 + 1;
+				RealState.OverflowCount = OverflowTargetA;
+				const uint16_t OverflowTargetB = TimerTicksB >> 48 + 1;
+				RTT_AR_B = TimerTicksB >> 16;
+				RealState.Handler = [OverflowTargetB, RTT_AR_B, DoA, DoneCallback]()
+				{
+					if (!--RealState.OverflowCount)
+					{
+						if (--RealState.RepeatLeft)
+						{
+							RealState.OverflowCount += OverflowTargetB;
+							RTT->RTT_AR += RTT_AR_B;
+							std::swap(RealState.Handler, RealState.CandidateHandler);
+						}
+						else
+						{
+							RTT->RTT_MR = 0;
+							RealState.Handler = nullptr;
+						}
+						DoA();
+						if (!RealState.RepeatLeft)
+							DoneCallback();
+					}
+				};
+				RealState.CandidateHandler = [OverflowTargetA, RTT_AR_A, DoB, DoneCallback]()
+				{
+					if (!--RealState.OverflowCount)
+					{
+						if (--RealState.RepeatLeft)
+						{
+							RealState.OverflowCount += OverflowTargetA;
+							RTT->RTT_AR += RTT_AR_A;
+							std::swap(RealState.Handler, RealState.CandidateHandler);
+						}
+						else
+						{
+							RTT->RTT_MR = 0;
+							RealState.Handler = nullptr;
+						}
+						DoB();
+						if (!RealState.RepeatLeft)
+							DoneCallback();
+					}
+				};
+				return;
+			}
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
+			RTT_AR_A = TimerTicksA / RTPRES;
+			RTT_AR_B = TimerTicksB / RTPRES;
+		}
+		else
+		{
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
+			RTT_AR_A = TimerTicksA;
+			RTT_AR_B = TimerTicksB;
+		}
+		RTT->RTT_AR = RTT_AR_A;
+		RealState.Handler = [RTT_AR_B, DoA, DoneCallback]()
+		{
+			if (--RealState.RepeatLeft)
+			{
+				RTT->RTT_AR += RTT_AR_B;
+				std::swap(RealState.Handler, RealState.CandidateHandler);
+			}
+			else
+			{
+				RTT->RTT_MR = 0;
+				RealState.Handler = nullptr;
+			}
+			DoA();
+			if (!RealState.RepeatLeft)
+				DoneCallback();
+		};
+		RealState.CandidateHandler = [RTT_AR_A, DoB, DoneCallback]()
+		{
+			if (--RealState.RepeatLeft)
+			{
+				RTT->RTT_AR += RTT_AR_A;
+				std::swap(RealState.Handler, RealState.CandidateHandler);
+			}
+			else
+			{
+				RTT->RTT_MR = 0;
+				RealState.Handler = nullptr;
+			}
+			DoB();
+			if (!RealState.RepeatLeft)
+				DoneCallback();
+		};
+	}
+	else
+		DoneCallback();
+}
 #endif
-_TimerState Timers_one_for_all::_TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
+_PeripheralState Timers_one_for_all::_TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
+
 #endif

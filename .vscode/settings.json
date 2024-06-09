@@ -72,6 +72,8 @@
 		"fstream": "cpp",
 		"tuple": "cpp",
 		"codecvt": "cpp",
-		"dynarray": "cpp"
+		"dynarray": "cpp",
+		"system_error": "cpp",
+		"bit": "cpp"
 	}
 }
