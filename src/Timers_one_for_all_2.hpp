@@ -57,24 +57,24 @@ namespace Timers_one_for_all
 	constexpr uint8_t NumTimers = (uint8_t)TimerEnum::_NumTimers;
 	using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 	constexpr uint64_t InfiniteRepeat = -1;
+#ifdef ARDUINO_ARCH_AVR
 	struct _TimerState
 	{
-#ifdef ARDUINO_ARCH_AVR
 		uint8_t Clock;
 		std::function<void()> OVF;
 		std::function<void()> COMPA;
 		std::function<void()> COMPB;
 		std::function<void()> CandidateOVF;
 		std::function<void()> CandidateCOMP;
-#endif
 		uint32_t OverflowCount;
 		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
+#endif
 	struct TimerClass
 	{
-		_TimerState &State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
 #ifdef ARDUINO_ARCH_AVR
+		_TimerState &State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
 		volatile uint8_t &TCCRB;
 		volatile uint8_t &TIMSK;
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
@@ -155,9 +155,6 @@ namespace Timers_one_for_all
 	protected:
 #ifdef ARDUINO_ARCH_AVR
 		constexpr TimerClass(_TimerState &State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : State(State), TCCRB(TCCRB), TIMSK(TIMSK) {}
-#endif
-#ifdef ARDUINO_ARCH_SAM
-		constexpr TimerClass(_TimerState &State) : State(State) {}
 #endif
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) const = 0;
@@ -244,69 +241,118 @@ namespace Timers_one_for_all
 #ifdef TOFA_SYSTIMER
 	constexpr struct SystemTimerClass : public TimerClass
 	{
-		bool Busy() const override { return SysTick->CTRL & SysTick_CTRL_ENABLE_Msk; }
-		void Pause() const override
-		{
-			SysTick->LOAD = SysTick->VAL;
-			SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
-		}
-		constexpr SystemTimerClass(_TimerState &State) : TimerClass(State) {}
-	} SystemTimer(_TimerStates[(size_t)TimerEnum::SysTimer]);
+		bool Busy() const override;
+		void Pause() const override;
+		void Continue() const override;
+		void Stop() const override;
+		void StartTiming() const override;
+
+	protected:
+		Tick GetTiming() const override;
+		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
+		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
+	} SystemTimer;
 #endif
 #ifdef TOFA_REALTIMER
 	constexpr struct RealTimerClass : public TimerClass
 	{
-		bool Busy() const override { return NVIC_GetActive(RTT_IRQn); }
-		void Pause() const override
-		{
-			const uint32_t RTT_VR = RTT->RTT_VR;
-			RTT->RTT_MR &= ~RTT_MR_ALMIEN;
-			if (RTT->RTT_AR < RTT_VR)
-				State.OverflowCount++;
-			RTT->RTT_AR -= RTT_VR;
-			//需要一个好的伪暂停方法
-		}
-		constexpr RealTimerClass(_TimerState &State) : TimerClass(State) {}
-	} RealTimer(_TimerStates[(size_t)TimerEnum::RealTimer]);
+		bool Busy() const override;
+		void Pause() const override;
+		void Continue() const override;
+		void Stop() const override;
+		void StartTiming() const override;
+
+	protected:
+		Tick GetTiming() const override;
+		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
+		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
+	} RealTimer;
 #endif
+	struct _TimerState
+	{
+	};
+	enum class _PeripheralEnum
+	{
+#ifdef TOFA_TIMER0
+		Timer0,
+#endif
+#ifdef TOFA_TIMER1
+		Timer1,
+#endif
+#ifdef TOFA_TIMER2
+		Timer2,
+#endif
+#ifdef TOFA_TIMER3
+		Timer3,
+#endif
+#ifdef TOFA_TIMER4
+		Timer4,
+#endif
+#ifdef TOFA_TIMER5
+		Timer5,
+#endif
+#ifdef TOFA_TIMER6
+		Timer6,
+#endif
+#ifdef TOFA_TIMER7
+		Timer7,
+#endif
+#ifdef TOFA_TIMER8
+		Timer8,
+#endif
+		NumPeripherals
+	};
+	extern _TimerState _TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
 	constexpr struct PeripheralTimerClass : public TimerClass
 	{
+		bool Busy() const override { return Channel.TC_SR & TC_SR_CLKSTA; }
+		void Pause() const override;
+		void Continue() const override;
+		void Stop() const override;
+		void StartTiming() const override;
+		constexpr PeripheralTimerClass(_TimerState &State, TcChannel &Channel, IRQn_Type irq) : State(State), Channel(Channel), irq(irq) {}
+
+	protected:
+		_TimerState &State;
 		TcChannel &Channel;
 		IRQn_Type irq;
-		bool Busy() const override { return Channel.TC_SR & TC_SR_CLKSTA; }
-		void Pause()const override
-		{
-
-		}
-		constexpr PeripheralTimerClass(_TimerState &State, TcChannel &Channel, IRQn_Type irq) : TimerClass(State), Channel(Channel), irq(irq) {}
+		Tick GetTiming() const override;
+		void Delay(Tick) const override;
+		void DoAfter(Tick After, std::function<void()> Do) const override;
+		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
+		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	} PeripheralTimers[] =
 		{
 #ifdef TOFA_TIMER0
-			{_TimerStates[(size_t)TimerEnum::Timer0], TC0->TC_CHANNEL[0], TC0_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer0], TC0->TC_CHANNEL[0], TC0_IRQn},
 #endif
 #ifdef TOFA_TIMER1
-			{_TimerStates[(size_t)TimerEnum::Timer1], TC0->TC_CHANNEL[1], TC1_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer1], TC0->TC_CHANNEL[1], TC1_IRQn},
 #endif
 #ifdef TOFA_TIMER2
-			{_TimerStates[(size_t)TimerEnum::Timer2], TC0->TC_CHANNEL[2], TC2_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer2], TC0->TC_CHANNEL[2], TC2_IRQn},
 #endif
 #ifdef TOFA_TIMER3
-			{_TimerStates[(size_t)TimerEnum::Timer3], TC1->TC_CHANNEL[0], TC3_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer3], TC1->TC_CHANNEL[0], TC3_IRQn},
 #endif
 #ifdef TOFA_TIMER4
-			{_TimerStates[(size_t)TimerEnum::Timer4], TC1->TC_CHANNEL[1], TC4_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer4], TC1->TC_CHANNEL[1], TC4_IRQn},
 #endif
 #ifdef TOFA_TIMER5
-			{_TimerStates[(size_t)TimerEnum::Timer5], TC1->TC_CHANNEL[2], TC5_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer5], TC1->TC_CHANNEL[2], TC5_IRQn},
 #endif
 #ifdef TOFA_TIMER6
-			{_TimerStates[(size_t)TimerEnum::Timer6], TC2->TC_CHANNEL[0], TC6_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer6], TC2->TC_CHANNEL[0], TC6_IRQn},
 #endif
 #ifdef TOFA_TIMER7
-			{_TimerStates[(size_t)TimerEnum::Timer7], TC2->TC_CHANNEL[1], TC7_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer7], TC2->TC_CHANNEL[1], TC7_IRQn},
 #endif
 #ifdef TOFA_TIMER8
-			{_TimerStates[(size_t)TimerEnum::Timer8], TC2->TC_CHANNEL[2], TC8_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer8], TC2->TC_CHANNEL[2], TC8_IRQn},
 #endif
 	};
 	constexpr const TimerClass *HardwareTimers[] =
