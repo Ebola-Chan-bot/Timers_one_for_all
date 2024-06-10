@@ -1,38 +1,56 @@
 // 上传该示例之前，请在7号口连接一个LED灯，8号口连接一个无源蜂鸣器的IO端口
 #include <Timers_one_for_all.hpp>
+// 本库经常搭配低级快速数字读写库一起使用
+#include <Low_level_quick_digital_IO.hpp>
 using namespace Timers_one_for_all;
 constexpr uint8_t LED = 7;
 constexpr uint8_t Buzzer = 8;
-void LightDown()
-{
-  digitalWrite(LED, LOW);
-}
 void setup()
 {
-  pinMode(7, OUTPUT);
-  pinMode(8, OUTPUT);
-  Serial.begin(9600);
+  // 首先点亮LED
+  pinMode(LED, OUTPUT);
+  pinMode(Buzzer, OUTPUT);
   digitalWrite(LED, HIGH);
+
   // 5秒后熄灭LED灯，但不阻断程序
-  const TimerClass*const LEDTimer=AllocateTimer();
+  const TimerClass *const LEDTimer = AllocateTimer();
   LEDTimer->DoAfter(std::chrono::seconds(5), []()
-                               { digitalWrite(LED, LOW); });
-  const TimerClass*const BeatTimer=AllocateTimer();
-  const TimerClass*const ToneTimer=AllocateTimer();
-  BeatTimer->RepeatEvery(std::chrono::seconds(2),)
-  // 设置4号计时器，每隔2秒，就用5号计时器生成2000㎐脉冲1秒，重复3次
-  RepeatAfter<4, 2000, 3>(PlayTone<5, Buzzer, 2000, 1000>);
-  // 设置计时器1，将程序阻断7秒
-  Delay<1, 7000>();
-  // 设置计时器1，将LED灯先亮2秒，再熄灭1秒，无限循环
-  SquareWave<1, LED, 2000, 1000>();
-  // 设置计时器3在8秒后停止计时器1
-  DoAfter<3, 8000>(ShutDown<1>);
-  // 观察到，LED灯明暗循环两次后，最终停在了亮状态，因为1号计时器尚未触发暗事件就被停止了
-  // 亮1秒暗2秒的方波，重复5个循环
-  Delay<4, 8000>();
-  SquareWave<1, LED, 1000, 2000, 5>();
+                    { digitalWrite(LED, LOW); });
+
+  // 每隔2秒，就生成2000㎐脉冲1秒，重复3次
+  const TimerClass *const BeatTimer = AllocateTimer();
+  const TimerClass *const ToneTimer = AllocateTimer();
+  BeatTimer->RepeatEvery(std::chrono::seconds(2), [ToneTimer]()
+                         { ToneTimer->RepeatEvery<std::chrono::microseconds>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)) / 2000, Low_level_quick_digital_IO::DigitalToggle<Buzzer>, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1))); }, 3);
+
+  // 将程序阻断7秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器每隔2s以2000㎐响1s，重复3次。
+  const TimerClass *const DelayTimer = AllocateTimer();
+  DelayTimer->Delay(std::chrono::seconds(7));
+
+  // 使用AllocateTimer分配的计时器，用完后记得释放才能被再次分配
+  BeatTimer->Allocatable(true);
+  ToneTimer->Allocatable(true);
+
+  // 将LED灯先亮2秒，再熄灭1秒，无限循环。之前的LEDTimer可以重复使用，不必重新分配。
+  digitalWrite(LED, HIGH);
+  LEDTimer->DoubleRepeat(std::chrono::seconds(2), Low_level_quick_digital_IO::DigitalWrite<LED, LOW>, std::chrono::seconds(1), Low_level_quick_digital_IO::DigitalWrite<LED, HIGH>, InfiniteRepeat);
+
+  // 设置8秒后暂停LED的无限闪烁
+  const TimerClass *const PauseTimer = AllocateTimer();
+  PauseTimer->DoAfter(std::chrono::seconds(8), [LEDTimer]()
+                      { LEDTimer->Pause(); });
+
+  // 设置16秒后继续LED的无限闪烁
+  const TimerClass *const ContinueTimer = AllocateTimer();
+  ContinueTimer->DoAfter(std::chrono::seconds(16), [LEDTimer]()
+                         { LEDTimer->Continue(); });
+
+  // 设置24秒后终止LED的无限闪烁
+  const TimerClass *const StopTimer = AllocateTimer();
+  StopTimer->DoAfter(std::chrono::seconds(24), [LEDTimer]()
+                     { LEDTimer->Stop(); });
 }
 void loop()
 {
+  //等待，观察。在此期间应当看到，LED以亮2s、暗1s的周期闪烁8秒，然后卡在亮状态暂停8秒，然后继续闪烁8秒，最后彻底停止。
 }
