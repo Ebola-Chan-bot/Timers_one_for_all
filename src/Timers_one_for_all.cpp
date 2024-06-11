@@ -29,7 +29,7 @@ struct U8SequenceDiff;
 template <uint8_t First, uint8_t Second, uint8_t... Rest>
 struct U8SequenceDiff<U8Sequence<First, Second, Rest...>>
 {
-	using type = U8SequencePrepend<Second - First, U8SequenceDiff<U8Sequence<Second, Rest...>>::type>::type;
+	using type = typename U8SequencePrepend<Second - First, typename U8SequenceDiff<U8Sequence<Second, Rest...>>::type>::type;
 };
 template <uint8_t First>
 struct U8SequenceDiff<U8Sequence<First>>
@@ -40,12 +40,12 @@ struct U8SequenceDiff<U8Sequence<First>>
 template <typename T, uint8_t BitIndex = 0, uint8_t PrescalerIndex = 1>
 struct BitLimit
 {
-	using type = U8SequencePrepend<PrescalerIndex, BitLimit<T, BitIndex + 1, PrescalerIndex>::type>::type;
+	using type = typename U8SequencePrepend<PrescalerIndex, typename BitLimit<T, BitIndex + 1, PrescalerIndex>::type>::type;
 };
 template <uint8_t BitIndex, uint8_t PrescalerIndex, uint8_t... Rest>
 struct BitLimit<U8Sequence<BitIndex + 1, Rest...>, BitIndex, PrescalerIndex>
 {
-	using type = U8SequencePrepend<PrescalerIndex, BitLimit<U8Sequence<Rest...>, BitIndex + 1, PrescalerIndex + 1>::type>::type;
+	using type = typename U8SequencePrepend<PrescalerIndex, typename BitLimit<U8Sequence<Rest...>, BitIndex + 1, PrescalerIndex + 1>::type>::type;
 };
 template <uint8_t BitIndex, uint8_t PrescalerIndex>
 struct BitLimit<U8Sequence<BitIndex + 1>, BitIndex, PrescalerIndex>
@@ -68,7 +68,7 @@ struct BitsToPrescaler_s<U8Sequence<Bit...>>
 };
 // 0号是无限大预分频器，表示暂停
 template <uint8_t... BitShift>
-struct PrescalerType : public PrescalerDiff<U8SequenceDiff<U8Sequence<0, BitShift...>>::type>, public BitsToPrescaler_s<BitLimit<U8Sequence<BitShift...>>::type>
+struct PrescalerType : public PrescalerDiff<typename U8SequenceDiff<U8Sequence<0, BitShift...>>::type>, public BitsToPrescaler_s<typename BitLimit<U8Sequence<BitShift...>>::type>
 {
 	static constexpr uint8_t BitShifts[] = {-1, 0, BitShift...};
 	static constexpr uint8_t MaxClock = std::extent_v<decltype(BitShifts)> - 1;
@@ -86,18 +86,18 @@ ISR(TIMER0_COMPB_vect)
 	_TimerStates[(size_t)TimerEnum::Timer0].COMPB();
 }
 #endif
-#define TimerIsr(T)                                          \
-	ISR(TIMER##T##_OVF_vect)                                 \
-	{                                                        \
-		_TimerStates[(size_t)TimerEnum::Timer##T##].OVF();   \
-	}                                                        \
-	ISR(TIMER##T##_COMPA_vect)                               \
-	{                                                        \
-		_TimerStates[(size_t)TimerEnum::Timer##T##].COMPA(); \
-	}                                                        \
-	ISR(TIMER##T##_COMPB_vect)                               \
-	{                                                        \
-		_TimerStates[(size_t)TimerEnum::Timer##T##].COMPB(); \
+#define TimerIsr(T)                                        \
+	ISR(TIMER##T##_OVF_vect)                               \
+	{                                                      \
+		_TimerStates[(size_t)TimerEnum::Timer##T].OVF();   \
+	}                                                      \
+	ISR(TIMER##T##_COMPA_vect)                             \
+	{                                                      \
+		_TimerStates[(size_t)TimerEnum::Timer##T].COMPA(); \
+	}                                                      \
+	ISR(TIMER##T##_COMPB_vect)                             \
+	{                                                      \
+		_TimerStates[(size_t)TimerEnum::Timer##T].COMPB(); \
 	}
 #ifdef TOFA_TIMER1
 TimerIsr(1);
@@ -117,36 +117,25 @@ TimerIsr(5);
 #endif
 using Prescaler01 = PrescalerType<3, 6, 8, 10>;
 using Prescaler2 = PrescalerType<3, 5, 6, 7, 8, 10>;
-template <typename PrescalerType>
-void StartTiming(TimerClass *Timer)
-{
-	Timer->TIFR = -1;
-	Timer->_State.OverflowCount = 0;
-	Timer->_State.OverflowTarget = PrescalerType::AdvanceFactor[0];
-	Timer->_State.OVFCOMPA = [Timer]()
-	{
-		_TimerState &_State = Timer->_State;
-		uint32_t &OverflowCount = _State.OverflowCount;
-		if (++OverflowCount == _State.OverflowTarget)
-		{
-			const uint8_t TCCRB = Timer->TCCRB++;
-			OverflowCount = 1;
-			if ((TCCRB < std::extent_v<decltype(PrescalerType::AdvanceFactor)>))
-				_State.OverflowTarget = PrescalerType::AdvanceFactor[TCCRB];
-			else
-				_State.OVFCOMPA = [&OverflowCount]()
-				{ OverflowCount++; };
-		}
-	};
-}
 void TimerClass0::StartTiming() const
 {
 	TCNT0 = 0;
 	TCCR0B = 1;
 	TCCR0A = 0;
 	TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
-	::StartTiming<Prescaler01>((TimerClass *)this);
+	_State.OverflowCount = 0;
+	_State.COMPA = [this]()
+	{
+		if (++_State.OverflowCount == Prescaler01::AdvanceFactor[TCCR0B])
+		{
+			_State.OverflowCount = 1;
+			if ((++TCCR0B >= std::extent_v<decltype(Prescaler01::AdvanceFactor)>))
+				_State.COMPA = [this]()
+				{ _State.OverflowCount++; };
+		}
+	};
 	OCR0A = 0;
+	TIFR0 = -1;
 }
 void TimerClass1::StartTiming() const
 {
@@ -154,7 +143,18 @@ void TimerClass1::StartTiming() const
 	TCCRB = 1;
 	TCCRA = 0;
 	TIMSK = 1 << TOIE1;
-	::StartTiming<Prescaler01>((TimerClass *)this);
+	_State.OverflowCount = 0;
+	_State.OVF = [this]()
+	{
+		if (++_State.OverflowCount == Prescaler01::AdvanceFactor[TCCRB])
+		{
+			_State.OverflowCount = 1;
+			if ((++TCCRB >= std::extent_v<decltype(Prescaler01::AdvanceFactor)>))
+				_State.OVF = [this]()
+				{ _State.OverflowCount++; };
+		}
+	};
+	TIFR = -1;
 }
 void TimerClass2::StartTiming() const
 {
@@ -162,7 +162,18 @@ void TimerClass2::StartTiming() const
 	TCCR2B = 1;
 	TCCR2A = 0;
 	TIMSK2 = 1 << TOIE1;
-	::StartTiming<Prescaler2>((TimerClass *)this);
+	_State.OverflowCount = 0;
+	_State.OVF = [this]()
+	{
+		if (++_State.OverflowCount == Prescaler01::AdvanceFactor[TCCR2B])
+		{
+			_State.OverflowCount = 1;
+			if ((++TCCR2B >= std::extent_v<decltype(Prescaler01::AdvanceFactor)>))
+				_State.OVF = [this]()
+				{ _State.OverflowCount++; };
+		}
+	};
+	TIFR2 = -1;
 }
 Tick TimerClass0::GetTiming() const
 {

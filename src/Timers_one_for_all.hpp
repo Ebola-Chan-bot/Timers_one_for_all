@@ -1,4 +1,5 @@
 #pragma once
+#include <Cpp_Standard_Library.h>
 #include <chrono>
 #include <functional>
 #include <Arduino.h>
@@ -75,13 +76,28 @@ namespace Timers_one_for_all
 		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
+	// 整数不能在编译期转换为constexpr引用，所以只能在运行时转换
+	template <typename T>
+	struct _RuntimeReference
+	{
+		operator volatile T &() const
+		{
+			return *(volatile T *)Value;
+		}
+		volatile T &operator=(T New) const
+		{
+			return *(volatile T *)Value = New;
+		}
+		constexpr _RuntimeReference(size_t Value) : Value(Value) {}
+
+	protected:
+		const size_t Value;
+	};
 #endif
 	struct TimerClass
 	{
 #ifdef ARDUINO_ARCH_AVR
 		_TimerState &_State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
-		volatile uint8_t &TCCRB;
-		volatile uint8_t &TIMSK;
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
 		bool Busy() const { return TIMSK; }
 		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
@@ -145,15 +161,18 @@ namespace Timers_one_for_all
 			T Every, std::function<void()> Do, T RepeatDuration, std::function<void()> DoneCallback = nullptr) const
 		{
 			const T TimeLeft = RepeatDuration % Every;
-			RepeatEvery(Every, Do, RepeatDuration / Every, DoneCallback								? [this, TimeLeft, DoneCallback]()
-															   { DoAfter(TimeLeft, DoneCallback); } : []() {});
+			if (DoneCallback)
+				RepeatEvery(Every, Do, RepeatDuration / Every, [this, TimeLeft, DoneCallback]()
+							{ DoAfter(TimeLeft, DoneCallback); });
+			else
+				RepeatEvery(Every, Do, RepeatDuration / Every);
 		}
 		// 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 		template <typename T>
 		void DoubleRepeat(
 			T AfterA, std::function<void()> DoA, T AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::function<void()> DoneCallback = []() {}) const
 		{
-			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), DoA, std::chrono::duration_cast<Tick>(AfterB), DoB, NumHalfPeriods, DoneCallback)
+			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), DoA, std::chrono::duration_cast<Tick>(AfterB), DoB, NumHalfPeriods, DoneCallback);
 		}
 		// 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定时长（时间到后立即停止，因此DoA可能会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 		template <typename T>
@@ -162,13 +181,15 @@ namespace Timers_one_for_all
 		{
 			const T CycleLeft = RepeatDuration % (AfterA + AfterB);
 			const T HalfLeft = CycleLeft % AfterA;
-			DoubleRepeat(AfterA, DoA, AfterB, DoB, RepeatDuration / (AfterA + AfterB) * 2 + CycleLeft / AfterA, DoneCallback							? [this, HalfLeft, DoneCallback]
-																													{ DoAfter(HalfLeft, DoneCallback) } : []() {});
+			DoubleRepeat(AfterA, DoA, AfterB, DoB, RepeatDuration / (AfterA + AfterB) * 2 + CycleLeft / AfterA, DoneCallback							 ? [this, HalfLeft, DoneCallback]
+																													{ DoAfter(HalfLeft, DoneCallback); } : []() {});
 		}
 
 	protected:
 #ifdef ARDUINO_ARCH_AVR
-		constexpr TimerClass(_TimerState &_State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : _State(_State), TCCRB(TCCRB), TIMSK(TIMSK) {}
+		_RuntimeReference<uint8_t> TCCRB;
+		_RuntimeReference<uint8_t> TIMSK;
+		constexpr TimerClass(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : _State(_State), TCCRB(TCCRB), TIMSK(TIMSK) {}
 #endif
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) const = 0;
@@ -177,10 +198,12 @@ namespace Timers_one_for_all
 		virtual void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const = 0;
 	};
 #ifdef ARDUINO_ARCH_AVR
+#define _MMIO_BYTE(mem_addr) mem_addr
+#define _MMIO_WORD(mem_addr) mem_addr
 #ifdef TOFA_TIMER0
 	struct TimerClass0 : public TimerClass
 	{
-		constexpr TimerClass0(_TimerState &_State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
+		constexpr TimerClass0(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
 
 	protected:
 		void StartTiming() const override;
@@ -195,14 +218,14 @@ namespace Timers_one_for_all
 #endif
 	struct TimerClass1 : public TimerClass
 	{
-		constexpr TimerClass1(_TimerState &_State, volatile uint8_t &TCCRA, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK, volatile uint8_t &TIFR, volatile uint16_t &TCNT, volatile uint16_t &OCRA, volatile uint16_t &OCRB) : TimerClass(_State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
+		constexpr TimerClass1(_TimerState &_State, _RuntimeReference<uint8_t>TCCRA, _RuntimeReference<uint8_t>TCCRB, _RuntimeReference<uint8_t>TIMSK, _RuntimeReference<uint8_t>TIFR, _RuntimeReference<uint16_t>TCNT, _RuntimeReference<uint16_t>OCRA, _RuntimeReference<uint16_t>OCRB) : TimerClass(_State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
 
 	protected:
-		volatile uint8_t &TCCRA;
-		volatile uint8_t &TIFR;
-		volatile uint16_t &TCNT;
-		volatile uint16_t &OCRA;
-		volatile uint16_t &OCRB;
+		_RuntimeReference<uint8_t>TCCRA;
+		_RuntimeReference<uint8_t>TIFR;
+		_RuntimeReference<uint16_t>TCNT;
+		_RuntimeReference<uint16_t>OCRA;
+		_RuntimeReference<uint16_t>OCRB;
 		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
@@ -217,7 +240,7 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER2
 	struct TimerClass2 : public TimerClass
 	{
-		constexpr TimerClass2(_TimerState &_State, volatile uint8_t &TCCRB, volatile uint8_t &TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
+		constexpr TimerClass2(_TimerState &_State, _RuntimeReference<uint8_t>TCCRB, _RuntimeReference<uint8_t>TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
 
 	protected:
 		void StartTiming() const override;
@@ -242,6 +265,8 @@ namespace Timers_one_for_all
 	// 5号计时器
 	constexpr TimerClass1 HardwareTimer5(_TimerStates[(size_t)TimerEnum::Timer5], TCCR5A, TCCR5B, TIMSK5, TIFR5, TCNT5, OCR5A, OCR5B);
 #endif
+#define _MMIO_BYTE(mem_addr) (*(volatile uint8_t *)(mem_addr))
+#define _MMIO_WORD(mem_addr) (*(volatile uint16_t *)(mem_addr))
 	// 所有硬件计时器。此数组可用TimerEnum转换成size_t后直接索引到对应的指针。
 	constexpr const TimerClass *HardwareTimers[] = {
 #ifdef TOFA_TIMER0
