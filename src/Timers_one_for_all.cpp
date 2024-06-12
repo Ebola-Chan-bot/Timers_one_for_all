@@ -1,4 +1,5 @@
 #include <Timers_one_for_all.hpp>
+#include <iostream>
 using namespace Timers_one_for_all;
 const TimerClass *Timers_one_for_all::AllocateTimer()
 {
@@ -178,17 +179,17 @@ void TimerClass2::StartTiming() const
 Tick TimerClass0::GetTiming() const
 {
 	const uint8_t Clock = TCCR0B;
-	return Tick((_State.OverflowCount << 8) + TCNT0 << Prescaler01::BitShifts[Clock ? Clock : _State.Clock]);
+	return Tick(((uint64_t)_State.OverflowCount << 8) + TCNT0 << Prescaler01::BitShifts[Clock ? Clock : _State.Clock]);
 }
 Tick TimerClass1::GetTiming() const
 {
 	const uint8_t Clock = TCCRB;
-	return Tick((_State.OverflowCount << 16) + TCNT << Prescaler01::BitShifts[Clock ? Clock : _State.Clock]);
+	return Tick(((uint64_t)_State.OverflowCount << 16) + TCNT << Prescaler01::BitShifts[Clock ? Clock : _State.Clock]);
 }
 Tick TimerClass2::GetTiming() const
 {
 	const uint8_t Clock = TCCR2B;
-	return Tick((_State.OverflowCount << 8) + TCNT2 << Prescaler2::BitShifts[Clock ? Clock : _State.Clock]);
+	return Tick(((uint64_t)_State.OverflowCount << 8) + TCNT2 << Prescaler2::BitShifts[Clock ? Clock : _State.Clock]);
 }
 // 返回OverflowTarget
 template <typename Prescaler>
@@ -640,7 +641,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 						TIMSK = (1 << OCIE1A) | (1 << TOIE1);
 						std::swap(_State.OVF, _State.CandidateOVF);
 						_State.OverflowCount = OverflowTargetA;
-						TCCRB = 1 << WGM12 | Prescaler01::MaxClock;
+						TCCRB = (1 << WGM12) | Prescaler01::MaxClock;
 					}
 				};
 			}
@@ -653,7 +654,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 					if (!--_State.OverflowCount)
 					{
 						TIMSK = (1 << TOIE1) | (1 << OCIE1A);
-						TCCRB = 1 << WGM12 | Prescaler01::MaxClock;
+						TCCRB = (1 << WGM12) | Prescaler01::MaxClock;
 					}
 				};
 			}
@@ -1176,7 +1177,7 @@ void RealTimerClass::StartTiming() const
 using SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 32768>>;
 Tick RealTimerClass::GetTiming() const
 {
-	uint64_t TimerTicks = (RealState.OverflowCount + 1) << 32 + RTT->RTT_VR - RTT->RTT_AR;
+	uint64_t TimerTicks = ((uint64_t)(RealState.OverflowCount + 1) << 32) + RTT->RTT_VR - RTT->RTT_AR;
 	if (const uint16_t RTPRES = RTT->RTT_MR)
 		TimerTicks *= RTPRES;
 	else
@@ -1348,9 +1349,9 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 				RTT_AR_A = TimerTicksA >> 16;
 				RTT->RTT_AR = RTT_AR_A;
-				const uint16_t OverflowTargetA = TimerTicksA >> 48 + 1;
+				const uint16_t OverflowTargetA = (TimerTicksA >> 48) + 1;
 				RealState.OverflowCount = OverflowTargetA;
-				const uint16_t OverflowTargetB = TimerTicksB >> 48 + 1;
+				const uint16_t OverflowTargetB = (TimerTicksB >> 48) + 1;
 				RTT_AR_B = TimerTicksB >> 16;
 				RealState.Handler = [OverflowTargetB, RTT_AR_B, DoA, DoneCallback]()
 				{
@@ -1511,11 +1512,12 @@ void PeripheralTimerClass::Initialize() const
 		static bool PMC_Initialized = []()
 		{
 			pmc_set_writeprotect(0);
-			pmc_enable_all_periph_clk();
 			return true;
 		}();
+		pmc_enable_periph_clk(UL_ID_TC);
 		NVIC_EnableIRQ(irq);
 		// 可能存在的问题：TC_WPMR需要去除写保护
+		_State.Uninitialized = false;
 	}
 }
 void PeripheralTimerClass::StartTiming() const
@@ -1547,7 +1549,7 @@ void PeripheralTimerClass::StartTiming() const
 }
 Tick PeripheralTimerClass::GetTiming() const
 {
-	const uint64_t TimeTicks = _State.OverflowCount << 32 + Channel.TC_CV;
+	const uint64_t TimeTicks = ((uint64_t)_State.OverflowCount << 32) + Channel.TC_CV;
 	uint32_t TCCLKS = Channel.TC_CMR & TC_CMR_TCCLKS_Msk;
 	if (TCCLKS > TC_CMR_TCCLKS_TIMER_CLOCK5)
 		TCCLKS = _State.TCCLKS;

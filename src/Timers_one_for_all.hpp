@@ -218,14 +218,14 @@ namespace Timers_one_for_all
 #endif
 	struct TimerClass1 : public TimerClass
 	{
-		constexpr TimerClass1(_TimerState &_State, _RuntimeReference<uint8_t>TCCRA, _RuntimeReference<uint8_t>TCCRB, _RuntimeReference<uint8_t>TIMSK, _RuntimeReference<uint8_t>TIFR, _RuntimeReference<uint16_t>TCNT, _RuntimeReference<uint16_t>OCRA, _RuntimeReference<uint16_t>OCRB) : TimerClass(_State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
+		constexpr TimerClass1(_TimerState &_State, _RuntimeReference<uint8_t> TCCRA, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK, _RuntimeReference<uint8_t> TIFR, _RuntimeReference<uint16_t> TCNT, _RuntimeReference<uint16_t> OCRA, _RuntimeReference<uint16_t> OCRB) : TimerClass(_State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
 
 	protected:
-		_RuntimeReference<uint8_t>TCCRA;
-		_RuntimeReference<uint8_t>TIFR;
-		_RuntimeReference<uint16_t>TCNT;
-		_RuntimeReference<uint16_t>OCRA;
-		_RuntimeReference<uint16_t>OCRB;
+		_RuntimeReference<uint8_t> TCCRA;
+		_RuntimeReference<uint8_t> TIFR;
+		_RuntimeReference<uint16_t> TCNT;
+		_RuntimeReference<uint16_t> OCRA;
+		_RuntimeReference<uint16_t> OCRB;
 		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
@@ -240,7 +240,7 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER2
 	struct TimerClass2 : public TimerClass
 	{
-		constexpr TimerClass2(_TimerState &_State, _RuntimeReference<uint8_t>TCCRB, _RuntimeReference<uint8_t>TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
+		constexpr TimerClass2(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
 
 	protected:
 		void StartTiming() const override;
@@ -386,11 +386,12 @@ namespace Timers_one_for_all
 		void StartTiming() const override;
 		bool Allocatable() const override;
 		void Allocatable(bool A) const override;
-		constexpr PeripheralTimerClass(_PeripheralState &_State, TcChannel &Channel, IRQn_Type irq) : _State(_State), Channel(Channel), irq(irq) {}
+		constexpr PeripheralTimerClass(_PeripheralState &_State, TcChannel &Channel, IRQn_Type irq, uint32_t UL_ID_TC) : _State(_State), Channel(Channel), irq(irq), UL_ID_TC(UL_ID_TC) {}
 
 	protected:
 		TcChannel &Channel;
 		IRQn_Type irq;
+		uint32_t UL_ID_TC;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
@@ -400,31 +401,31 @@ namespace Timers_one_for_all
 	} PeripheralTimers[] =
 		{
 #ifdef TOFA_TIMER0
-			{_TimerStates[(size_t)_PeripheralEnum::Timer0], TC0->TC_CHANNEL[0], TC0_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer0], TC0->TC_CHANNEL[0], TC0_IRQn, ID_TC0},
 #endif
 #ifdef TOFA_TIMER1
-			{_TimerStates[(size_t)_PeripheralEnum::Timer1], TC0->TC_CHANNEL[1], TC1_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer1], TC0->TC_CHANNEL[1], TC1_IRQn, ID_TC1},
 #endif
 #ifdef TOFA_TIMER2
-			{_TimerStates[(size_t)_PeripheralEnum::Timer2], TC0->TC_CHANNEL[2], TC2_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer2], TC0->TC_CHANNEL[2], TC2_IRQn, ID_TC2},
 #endif
 #ifdef TOFA_TIMER3
-			{_TimerStates[(size_t)_PeripheralEnum::Timer3], TC1->TC_CHANNEL[0], TC3_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer3], TC1->TC_CHANNEL[0], TC3_IRQn, ID_TC3},
 #endif
 #ifdef TOFA_TIMER4
-			{_TimerStates[(size_t)_PeripheralEnum::Timer4], TC1->TC_CHANNEL[1], TC4_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer4], TC1->TC_CHANNEL[1], TC4_IRQn, ID_TC4},
 #endif
 #ifdef TOFA_TIMER5
-			{_TimerStates[(size_t)_PeripheralEnum::Timer5], TC1->TC_CHANNEL[2], TC5_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer5], TC1->TC_CHANNEL[2], TC5_IRQn, ID_TC5},
 #endif
 #ifdef TOFA_TIMER6
-			{_TimerStates[(size_t)_PeripheralEnum::Timer6], TC2->TC_CHANNEL[0], TC6_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer6], TC2->TC_CHANNEL[0], TC6_IRQn, ID_TC6},
 #endif
 #ifdef TOFA_TIMER7
-			{_TimerStates[(size_t)_PeripheralEnum::Timer7], TC2->TC_CHANNEL[1], TC7_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer7], TC2->TC_CHANNEL[1], TC7_IRQn, ID_TC7},
 #endif
 #ifdef TOFA_TIMER8
-			{_TimerStates[(size_t)_PeripheralEnum::Timer8], TC2->TC_CHANNEL[2], TC8_IRQn},
+			{_TimerStates[(size_t)_PeripheralEnum::Timer8], TC2->TC_CHANNEL[2], TC8_IRQn, ID_TC8},
 #endif
 	};
 	// 所有可用的硬件计时器。此数组可用TimerEnum转换为size_t索引以获取对应指针。
@@ -465,6 +466,6 @@ namespace Timers_one_for_all
 #endif
 	};
 #endif
-	// 分配空闲的计时器。如果没有空闲的计时器，返回nullptr。此方法优先返回HardwareTimers中序数较大的的计时器。
+	// 分配空闲的计时器。如果没有空闲的计时器，返回nullptr。此方法优先返回HardwareTimers中序数较大的的计时器。在进入setup之前的全局变量初始化阶段，不能调用此方法。
 	const TimerClass *AllocateTimer();
 }
