@@ -1517,7 +1517,7 @@ void PeripheralTimerClass::StartTiming() const
 {
 	Initialize();
 	Channel.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG;
-	Channel.TC_CMR = TC_CMR_WAVSEL_UP;
+	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 	Channel.TC_IDR = ~TC_IDR_COVFS;
 	Channel.TC_IER = TC_IER_COVFS;
 	_State.OverflowCount = 0;
@@ -1569,7 +1569,7 @@ void PeripheralTimerClass::Delay(Tick Time) const
 		Channel.TC_RC = SlowTicks;
 		if (volatile uint32_t OverflowCount = SlowTicks >> 32)
 		{
-			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP;
+			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 			_State.Handler = [this, &OverflowCount]
 			{
 				// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
@@ -1581,7 +1581,7 @@ void PeripheralTimerClass::Delay(Tick Time) const
 			return;
 		}
 	}
-	Channel.TC_CMR = TCCLKS | TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS;
+	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS | TC_CMR_WAVE | TCCLKS;
 	while (Channel.TC_SR & TC_SR_CLKSTA)
 		;
 	return;
@@ -1607,7 +1607,7 @@ void PeripheralTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		Channel.TC_RC = SlowTicks;
 		if (_State.OverflowCount = SlowTicks >> 32)
 		{
-			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP;
+			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 			_State.Handler = [this, Do]
 			{
 				// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
@@ -1620,7 +1620,7 @@ void PeripheralTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 			return;
 		}
 	}
-	Channel.TC_CMR = TCCLKS | TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS;
+	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS | TC_CMR_WAVE | TCCLKS;
 	_State.Handler = Do;
 }
 void PeripheralTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
@@ -1659,7 +1659,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uin
 			if (uint32_t OverflowTarget = SlowTicks >> 32)
 			{
 				const uint32_t TC_RC = SlowTicks;
-				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP;
+				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 				OverflowTarget++;
 				_State.Handler = [this, TC_RC, OverflowTarget, Do, DoneCallback]
 				{
@@ -1680,7 +1680,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uin
 				return;
 			}
 		}
-		Channel.TC_CMR = TCCLKS | TC_CMR_WAVSEL_UP_RC;
+		Channel.TC_CMR = TC_CMR_WAVSEL_UP_RC | TC_CMR_WAVE | TCCLKS;
 		_State.Handler = [this, Do, DoneCallback]()
 		{
 			if (--_State.RepeatLeft == 1)
@@ -1731,7 +1731,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, 
 			const uint64_t PeriodSlow = std::chrono::duration_cast<SlowTick>(PeriodTick).count();
 			if (PeriodSlow >> 32)
 			{
-				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP;
+				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 				const uint64_t TimeTicksB = PeriodSlow - TimeTicksA;
 				const uint32_t OverflowTargetA = TimeTicksA >> 32;
 				const uint32_t TC_RC_A = TimeTicksA;
@@ -1781,7 +1781,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, 
 			Channel.TC_RA = TimeTicksA;
 			Channel.TC_RC = PeriodSlow;
 		}
-		Channel.TC_CMR = TCCLKS | TC_CMR_WAVSEL_UP_RC;
+		Channel.TC_CMR = TC_CMR_WAVSEL_UP_RC | TC_CMR_WAVE | TCCLKS;
 		Channel.TC_IDR = ~(TC_IDR_CPAS | TC_IDR_CPCS);
 		Channel.TC_IER = TC_IER_CPAS | TC_IER_CPCS;
 		_State.Handler = [this, DoA, DoneCallback]()
