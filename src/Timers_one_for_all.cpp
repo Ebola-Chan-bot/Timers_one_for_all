@@ -1451,10 +1451,6 @@ void RealTimerClass::Allocatable(bool A) const
 	RealState.Allocatable = A;
 }
 #endif
-bool PeripheralTimerClass::Busy() const
-{
-	return Channel.TC_SR & TC_SR_CLKSTA;
-}
 void PeripheralTimerClass::Pause() const
 {
 	if (const uint8_t TCCLKS = Channel.TC_CMR & TC_CMR_TCCLKS_Msk < TC_CMR_TCCLKS_XC0)
@@ -1468,14 +1464,10 @@ void PeripheralTimerClass::Continue() const
 	if (Channel.TC_CMR & TC_CMR_TCCLKS_Msk > TC_CMR_TCCLKS_TIMER_CLOCK5)
 		Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | _State.TCCLKS;
 }
-void PeripheralTimerClass::Stop() const
-{
-	Channel.TC_CCR = TC_CCR_CLKDIS;
-}
-#define HandlerDef(Index)                                                         \
-	void TC##Index##_Handler()                                                    \
-	{                                                                             \
-		PeripheralTimers[(size_t)_PeripheralEnum::Timer##Index]._State.Handler(); \
+#define HandlerDef(Index)                                                          \
+	void TC##Index##_Handler()                                                     \
+	{                                                                              \
+		PeripheralTimers[(size_t)_PeripheralEnum::Timer##Index]._ClearAndHandle(); \
 	}
 
 #ifdef TOFA_TIMER0
@@ -1505,18 +1497,19 @@ HandlerDef(7);
 #ifdef TOFA_TIMER8
 HandlerDef(8);
 #endif
+void PeripheralTimerClass::_ClearAndHandle() const
+{
+	Channel.TC_SR; // 必须读取一次才能清空中断旗帜
+	_State.Handler();
+}
 void PeripheralTimerClass::Initialize() const
 {
 	if (_State.Uninitialized)
 	{
-		static bool PMC_Initialized = []()
-		{
-			pmc_set_writeprotect(0);
-			return true;
-		}();
+		PMC->PMC_WPMR = PMC_WPMR_WPKEY_VALUE;
 		pmc_enable_periph_clk(UL_ID_TC);
 		NVIC_EnableIRQ(irq);
-		// 可能存在的问题：TC_WPMR需要去除写保护
+		// TC_WPMR默认不写保护
 		_State.Uninitialized = false;
 	}
 }
@@ -1812,14 +1805,6 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, 
 				DoneCallback();
 		};
 	}
-}
-bool PeripheralTimerClass::Allocatable() const
-{
-	return _State.Allocatable;
-}
-void PeripheralTimerClass::Allocatable(bool A) const
-{
-	_State.Allocatable = A;
 }
 _PeripheralState Timers_one_for_all::_TimerStates[(uint8_t)_PeripheralEnum::NumPeripherals];
 #endif

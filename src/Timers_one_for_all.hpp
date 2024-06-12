@@ -378,15 +378,15 @@ namespace Timers_one_for_all
 	// 周边计时器
 	constexpr struct PeripheralTimerClass : public TimerClass
 	{
-		_PeripheralState &_State;
-		bool Busy() const override;
+		bool Busy() const override { return Channel.TC_SR & TC_SR_CLKSTA; }
 		void Pause() const override;
 		void Continue() const override;
-		void Stop() const override;
+		void Stop() const override { Channel.TC_CCR = TC_CCR_CLKDIS; }
 		void StartTiming() const override;
-		bool Allocatable() const override;
-		void Allocatable(bool A) const override;
+		bool Allocatable() const override { return _State.Allocatable; }
+		void Allocatable(bool A) const override { _State.Allocatable = A; }
 		constexpr PeripheralTimerClass(_PeripheralState &_State, TcChannel &Channel, IRQn_Type irq, uint32_t UL_ID_TC) : _State(_State), Channel(Channel), irq(irq), UL_ID_TC(UL_ID_TC) {}
+		void _ClearAndHandle() const;
 
 	protected:
 		TcChannel &Channel;
@@ -398,6 +398,7 @@ namespace Timers_one_for_all
 		void RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const override;
 		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 		void Initialize() const;
+		_PeripheralState &_State;
 	} PeripheralTimers[] =
 		{
 #ifdef TOFA_TIMER0

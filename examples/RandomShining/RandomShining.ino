@@ -3,21 +3,19 @@
 #include <Low_level_quick_digital_IO.hpp>
 constexpr uint8_t LED = 8;
 using namespace Timers_one_for_all;
-void setup()
-{
-	pinMode(LED, OUTPUT);
-	randomSeed(analogRead(6));
-	const TimerClass *const LEDTimer = AllocateTimer();
-
-	//通过递归捕获实现无限循环，每次抽取0~2000㎳内的一个随机间隔闪烁LED
-	const std::function<void()> Do = [LEDTimer, Do]()
-	{
-		Low_level_quick_digital_IO::DigitalToggle<LED>();
-		LEDTimer->DoAfter(std::chrono::milliseconds(random(2000)), Do);
-	};
-	Do();
+void Toggle(const TimerClass* LEDTimer) {
+  //递归实现无限闪烁
+  Low_level_quick_digital_IO::DigitalToggle<LED>();
+  LEDTimer->DoAfter(std::chrono::milliseconds(random(2000)), [LEDTimer]() {
+    Toggle(LEDTimer);
+  });
 }
-void loop()
-{
-	//等待，查看闪烁效果
+void setup() {
+  Serial.begin(9600);
+  pinMode(LED, OUTPUT);
+  randomSeed(analogRead(6));
+  Toggle(AllocateTimer());
+}
+void loop() {
+  //等待，查看闪烁效果
 }
