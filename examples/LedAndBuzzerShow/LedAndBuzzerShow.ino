@@ -5,6 +5,7 @@
 using namespace Timers_one_for_all;
 constexpr uint8_t LED = 7;
 constexpr uint8_t Buzzer = 8;
+const TimerClass * BeatTimer;
 void setup()
 {
   // 首先点亮LED
@@ -18,7 +19,7 @@ void setup()
                     { digitalWrite(LED, LOW); });
 
   // 每隔2秒，就生成2000㎐脉冲1秒，重复3次
-  const TimerClass *const BeatTimer = AllocateTimer();
+ BeatTimer = AllocateTimer();
   const TimerClass *const ToneTimer = AllocateTimer();
   BeatTimer->RepeatEvery(std::chrono::seconds(2), [ToneTimer]()
                          { ToneTimer->RepeatEvery<std::chrono::microseconds>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)) / 2000, Low_level_quick_digital_IO::DigitalToggle<Buzzer>, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1))); }, 3);
@@ -26,7 +27,6 @@ void setup()
   // 将程序阻断7秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器每隔2s以2000㎐响1s，重复3次。
   const TimerClass *const DelayTimer = AllocateTimer();
   DelayTimer->Delay(std::chrono::seconds(7));
-
   // 使用AllocateTimer分配的计时器，用完后记得释放才能被再次分配
   BeatTimer->Allocatable(true);
   ToneTimer->Allocatable(true);

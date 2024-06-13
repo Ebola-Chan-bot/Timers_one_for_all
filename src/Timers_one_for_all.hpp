@@ -67,12 +67,13 @@ namespace Timers_one_for_all
 	{
 		bool Allocatable = true;
 		uint8_t Clock;
-		std::function<void()> OVF;
-		std::function<void()> COMPA;
-		std::function<void()> COMPB;
-		std::function<void()> CandidateOVF;
-		std::function<void()> CandidateCOMP;
-		uint32_t OverflowCount;
+		const std::function<void()> *OVF;
+		const std::function<void()> *COMPA;
+		const std::function<void()> *COMPB;
+		std::function<void()> HandlerA;
+		std::function<void()> HandlerB;
+		uint32_t OverflowCountA;
+		uint32_t OverflowCountB;
 		uint64_t RepeatLeft;
 	};
 	extern _TimerState _TimerStates[NumTimers];
@@ -98,8 +99,6 @@ namespace Timers_one_for_all
 	{
 #ifdef ARDUINO_ARCH_AVR
 		_TimerState &_State; // 全局可变类型的引用是不可变的，所以可以放在不可变对象中
-		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
-		bool Busy() const { return TIMSK; }
 		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
 		void Pause() const
 		{
@@ -116,27 +115,25 @@ namespace Timers_one_for_all
 			if (!(TCCRB & 0b111))
 				TCCRB |= _State.Clock;
 		}
-		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
-		void Stop() const { TIMSK = 0; }
 		// 指示当前计时器是否接受自动分配
 		bool Allocatable() const { return _State.Allocatable; }
 		// 设置当前计时器是否接受自动分配
 		void Allocatable(bool A) const { _State.Allocatable = A; }
 #endif
 #ifdef ARDUINO_ARCH_SAM
-		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
-		virtual bool Busy() const = 0;
 		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
 		virtual void Pause() const = 0;
 		// 继续计时器。继续一个未暂停的计时器将不做任何事
 		virtual void Continue() const = 0;
-		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
-		virtual void Stop() const = 0;
 		// 指示当前计时器是否接受自动分配
 		virtual bool Allocatable() const = 0;
 		// 设置当前计时器是否接受自动分配
 		virtual void Allocatable(bool A) const = 0;
 #endif
+		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
+		virtual bool Busy() const = 0;
+		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
+		virtual void Stop() const = 0;
 		// 开始计时任务。稍后可用GetTiming获取已记录的时间。
 		virtual void StartTiming() const = 0;
 		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
@@ -188,8 +185,7 @@ namespace Timers_one_for_all
 	protected:
 #ifdef ARDUINO_ARCH_AVR
 		_RuntimeReference<uint8_t> TCCRB;
-		_RuntimeReference<uint8_t> TIMSK;
-		constexpr TimerClass(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : _State(_State), TCCRB(TCCRB), TIMSK(TIMSK) {}
+		constexpr TimerClass(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB) : _State(_State), TCCRB(TCCRB) {}
 #endif
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) const = 0;
@@ -203,10 +199,12 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER0
 	struct TimerClass0 : public TimerClass
 	{
-		constexpr TimerClass0(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
+		constexpr TimerClass0(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB) : TimerClass(_State, TCCRB) {}
+		bool Busy() const override;
+		void Stop() const override;
+		void StartTiming() const override;
 
 	protected:
-		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
@@ -214,19 +212,22 @@ namespace Timers_one_for_all
 		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	};
 	// 0号计时器
-	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], TCCR0B, TIMSK0);
+	constexpr TimerClass0 HardwareTimer0(_TimerStates[(size_t)TimerEnum::Timer0], TCCR0B);
 #endif
 	struct TimerClass1 : public TimerClass
 	{
-		constexpr TimerClass1(_TimerState &_State, _RuntimeReference<uint8_t> TCCRA, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK, _RuntimeReference<uint8_t> TIFR, _RuntimeReference<uint16_t> TCNT, _RuntimeReference<uint16_t> OCRA, _RuntimeReference<uint16_t> OCRB) : TimerClass(_State, TCCRB, TIMSK), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB) {}
+		constexpr TimerClass1(_TimerState &_State, _RuntimeReference<uint8_t> TCCRA, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK, _RuntimeReference<uint8_t> TIFR, _RuntimeReference<uint16_t> TCNT, _RuntimeReference<uint16_t> OCRA, _RuntimeReference<uint16_t> OCRB) : TimerClass(_State, TCCRB), TCCRA(TCCRA), TIFR(TIFR), TCNT(TCNT), OCRA(OCRA), OCRB(OCRB), TIMSK(TIMSK) {}
+		bool Busy() const override;
+		void Stop() const override;
+		void StartTiming() const override;
 
 	protected:
 		_RuntimeReference<uint8_t> TCCRA;
 		_RuntimeReference<uint8_t> TIFR;
+		_RuntimeReference<uint8_t> TIMSK;
 		_RuntimeReference<uint16_t> TCNT;
 		_RuntimeReference<uint16_t> OCRA;
 		_RuntimeReference<uint16_t> OCRB;
-		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
@@ -240,10 +241,12 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER2
 	struct TimerClass2 : public TimerClass
 	{
-		constexpr TimerClass2(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB, _RuntimeReference<uint8_t> TIMSK) : TimerClass(_State, TCCRB, TIMSK) {}
+		constexpr TimerClass2(_TimerState &_State, _RuntimeReference<uint8_t> TCCRB) : TimerClass(_State, TCCRB) {}
+		bool Busy() const override;
+		void Stop() const override;
+		void StartTiming() const override;
 
 	protected:
-		void StartTiming() const override;
 		Tick GetTiming() const override;
 		void Delay(Tick) const override;
 		void DoAfter(Tick After, std::function<void()> Do) const override;
@@ -251,7 +254,7 @@ namespace Timers_one_for_all
 		void DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const override;
 	};
 	// 2号计时器
-	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], TCCR2B, TIMSK2);
+	constexpr TimerClass2 HardwareTimer2(_TimerStates[(size_t)TimerEnum::Timer2], TCCR2B);
 #endif
 #ifdef TOFA_TIMER3
 	// 3号计时器
@@ -333,7 +336,7 @@ namespace Timers_one_for_all
 	struct _TimerState
 	{
 		bool Allocatable = true;
-		std::function<void()> Handler;
+		const std::function<void()> *Handler; // 如果在中断过程中需要修改中断函数本身，将导致未定义行为，因此只能修改指针。
 		uint64_t RepeatLeft;
 	};
 	struct _PeripheralState : public _TimerState
@@ -341,7 +344,8 @@ namespace Timers_one_for_all
 		bool Uninitialized = true;
 		uint32_t TCCLKS;
 		uint32_t OverflowCount;
-		std::function<void()> CandidateHandler;
+		std::function<void()> HandlerA;
+		std::function<void()> HandlerB;
 	};
 	enum class _PeripheralEnum
 	{
@@ -387,9 +391,9 @@ namespace Timers_one_for_all
 		void Allocatable(bool A) const override { _State.Allocatable = A; }
 		constexpr PeripheralTimerClass(_PeripheralState &_State, TcChannel &Channel, IRQn_Type irq, uint32_t UL_ID_TC) : _State(_State), Channel(Channel), irq(irq), UL_ID_TC(UL_ID_TC) {}
 		void _ClearAndHandle() const;
+		TcChannel &Channel;
 
 	protected:
-		TcChannel &Channel;
 		IRQn_Type irq;
 		uint32_t UL_ID_TC;
 		Tick GetTiming() const override;
