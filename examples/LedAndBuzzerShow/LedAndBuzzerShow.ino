@@ -5,9 +5,9 @@
 using namespace Timers_one_for_all;
 constexpr uint8_t LED = 7;
 constexpr uint8_t Buzzer = 8;
-const TimerClass * BeatTimer;
-void setup()
-{
+const TimerClass *BeatTimer;
+const TimerClass *PauseTimer;
+void setup() {
   // 首先点亮LED
   pinMode(LED, OUTPUT);
   pinMode(Buzzer, OUTPUT);
@@ -15,14 +15,18 @@ void setup()
 
   // 5秒后熄灭LED灯，但不阻断程序
   const TimerClass *const LEDTimer = AllocateTimer();
-  LEDTimer->DoAfter(std::chrono::seconds(5), []()
-                    { digitalWrite(LED, LOW); });
+  LEDTimer->DoAfter(std::chrono::seconds(5), []() {
+    digitalWrite(LED, LOW);
+  });
 
   // 每隔2秒，就生成2000㎐脉冲1秒，重复3次
- BeatTimer = AllocateTimer();
+  BeatTimer = AllocateTimer();
   const TimerClass *const ToneTimer = AllocateTimer();
-  BeatTimer->RepeatEvery(std::chrono::seconds(2), [ToneTimer]()
-                         { ToneTimer->RepeatEvery<std::chrono::microseconds>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)) / 2000, Low_level_quick_digital_IO::DigitalToggle<Buzzer>, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1))); }, 3);
+  BeatTimer->RepeatEvery(
+    std::chrono::seconds(2), [ToneTimer]() {
+      ToneTimer->RepeatEvery<std::chrono::microseconds>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)) / 2000, Low_level_quick_digital_IO::DigitalToggle<Buzzer>, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(1)));
+    },
+    3);
 
   // 将程序阻断7秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器每隔2s以2000㎐响1s，重复3次。
   const TimerClass *const DelayTimer = AllocateTimer();
@@ -36,21 +40,28 @@ void setup()
   LEDTimer->DoubleRepeat(std::chrono::seconds(2), Low_level_quick_digital_IO::DigitalWrite<LED, LOW>, std::chrono::seconds(1), Low_level_quick_digital_IO::DigitalWrite<LED, HIGH>, InfiniteRepeat);
 
   // 设置8秒后暂停LED的无限闪烁
-  const TimerClass *const PauseTimer = AllocateTimer();
-  PauseTimer->DoAfter(std::chrono::seconds(8), [LEDTimer]()
-                      { LEDTimer->Pause(); });
+  PauseTimer = AllocateTimer();
+  PauseTimer->DoAfter(std::chrono::seconds(8), [LEDTimer]() {
+    LEDTimer->Pause();
+  });
 
   // 设置16秒后继续LED的无限闪烁
   const TimerClass *const ContinueTimer = AllocateTimer();
-  ContinueTimer->DoAfter(std::chrono::seconds(16), [LEDTimer]()
-                         { LEDTimer->Continue(); });
+  ContinueTimer->DoAfter(std::chrono::seconds(16), [LEDTimer]() {
+    LEDTimer->Continue();
+  });
 
   // 设置24秒后终止LED的无限闪烁
   const TimerClass *const StopTimer = AllocateTimer();
-  StopTimer->DoAfter(std::chrono::seconds(24), [LEDTimer]()
-                     { LEDTimer->Stop(); });
+  StopTimer->DoAfter(std::chrono::seconds(24), [LEDTimer]() {
+    LEDTimer->Stop();
+  });
+  Serial.begin(9600);
 }
-void loop()
-{
+void loop() { /*
   //等待，观察。在此期间应当看到，LED以亮2s、暗1s的周期闪烁8秒，然后卡在亮状态暂停8秒，然后继续闪烁8秒，最后彻底停止。
+  Serial.print(((PeripheralTimerClass*)PauseTimer)->Channel.TC_CV);
+  Serial.print("/");
+  Serial.println(((PeripheralTimerClass*)PauseTimer)->Channel.TC_RC);
+  Serial.flush();*/
 }

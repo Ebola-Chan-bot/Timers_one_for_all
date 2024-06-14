@@ -1323,16 +1323,18 @@ void RealTimerClass::Allocatable(bool A) const
 #endif
 void PeripheralTimerClass::Pause() const
 {
-	if (const uint8_t TCCLKS = Channel.TC_CMR & TC_CMR_TCCLKS_Msk < TC_CMR_TCCLKS_XC0)
+	if (const uint8_t TCCLKS = (Channel.TC_CMR & TC_CMR_TCCLKS_Msk) < TC_CMR_TCCLKS_XC0)
 	{
 		_State.TCCLKS = TCCLKS;
 		Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | TC_CMR_TCCLKS_XC0;
+		Serial.println("暂停");
 	}
 }
 void PeripheralTimerClass::Continue() const
 {
-	if (Channel.TC_CMR & TC_CMR_TCCLKS_Msk > TC_CMR_TCCLKS_TIMER_CLOCK5)
+	if ((Channel.TC_CMR & TC_CMR_TCCLKS_Msk) > TC_CMR_TCCLKS_TIMER_CLOCK5)
 		Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | _State.TCCLKS;
+		Serial.println("恢复");
 }
 #define HandlerDef(Index)                                                          \
 	void TC##Index##_Handler()                                                     \
@@ -1395,7 +1397,7 @@ void PeripheralTimerClass::StartTiming() const
 					   {
 		if (++_State.OverflowCount == 4)
 		{
-			if (++Channel.TC_CMR & TC_CMR_TCCLKS_Msk == TC_CMR_TCCLKS_TIMER_CLOCK4)
+			if ((++Channel.TC_CMR & TC_CMR_TCCLKS_Msk) == TC_CMR_TCCLKS_TIMER_CLOCK4)
 				_State.Handler = &_State.HandlerB;
 			_State.OverflowCount = 1;
 		} });
@@ -1424,8 +1426,6 @@ void PeripheralTimerClass::Delay(Tick Time) const
 	Channel.TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG;
 	uint32_t TCCLKS = Time.count() >> 32;
 	TCCLKS = TCCLKS ? sizeof(TCCLKS) * 8 - 1 - __builtin_clz(TCCLKS) : 0; // TCCLKS为0时需要避免下溢
-	Channel.TC_IDR = ~TC_IDR_CPCS;
-	Channel.TC_IER = TC_IER_CPCS;
 	if (TCCLKS < (TC_CMR_TCCLKS_TIMER_CLOCK4 << 1) + 1)
 	{
 		// 必须保证不溢出
@@ -1440,6 +1440,8 @@ void PeripheralTimerClass::Delay(Tick Time) const
 		if (volatile uint32_t OverflowCount = SlowTicks >> 32)
 		{
 			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
+			Channel.TC_IDR = ~TC_IDR_CPCS;
+			Channel.TC_IER = TC_IER_CPCS;
 			_State.Handler = &(_State.HandlerA = [this, &OverflowCount]
 							   {
 				// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
@@ -1451,6 +1453,7 @@ void PeripheralTimerClass::Delay(Tick Time) const
 		}
 	}
 	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS | TC_CMR_WAVE | TCCLKS;
+	Channel.TC_IDR = -1;
 	while (Channel.TC_SR & TC_SR_CLKSTA)
 		;
 	return;
