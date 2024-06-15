@@ -1004,6 +1004,8 @@ void RTT_Handler()
 {
 	if (RealState.Handler)
 		(*RealState.Handler)();
+	while (RTT->RTT_SR) // 读SR后不会马上清零，必须确认清零后才能退出，否则可能导致无限中断
+		;
 }
 bool RealTimerClass::Busy() const
 {
@@ -1051,7 +1053,7 @@ void RealTimerClass::StartTiming() const
 	{ RealState.OverflowCount++; };
 	NVIC_EnableIRQ(RTT_IRQn);
 }
-using SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 32768>>;
+using SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数据表说32768，实测明显不准。采用实测值。
 Tick RealTimerClass::GetTiming() const
 {
 	uint64_t TimerTicks = ((uint64_t)(RealState.OverflowCount + 1) << 32) + RTT->RTT_VR - RTT->RTT_AR;
@@ -1210,15 +1212,19 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 		const uint64_t TimerTicksB = std::chrono::duration_cast<SlowTick>(AfterB).count();
 		const uint64_t MaxTicks = max(TimerTicksA, TimerTicksB);
 		RealState.RepeatLeft = NumHalfPeriods;
-		NVIC_EnableIRQ(RTT_IRQn);
 		uint32_t RTPRES = MaxTicks >> 32;
 		uint32_t RTT_AR_A;
 		uint32_t RTT_AR_B;
+		uint32_t RTT_MR;
+		RTT->RTT_MR = 0;
+		while (RTT->RTT_SR)
+			;
+		NVIC_EnableIRQ(RTT_IRQn);
 		if (RTPRES)
 		{
 			if (RTPRES >> 16)
 			{
-				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+				RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 				RTT_AR_A = TimerTicksA >> 16;
 				RTT->RTT_AR = RTT_AR_A;
 				const uint16_t OverflowTargetA = (TimerTicksA >> 48) + 1;
@@ -1264,15 +1270,16 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 							DoneCallback();
 					}
 				};
+				RTT->RTT_MR = RTT_MR;
 				return;
 			}
-			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
+			RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
 			RTT_AR_A = TimerTicksA / RTPRES;
 			RTT_AR_B = TimerTicksB / RTPRES;
 		}
 		else
 		{
-			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
+			RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 			RTT_AR_A = TimerTicksA;
 			RTT_AR_B = TimerTicksB;
 		}
@@ -1308,6 +1315,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 			if (!RealState.RepeatLeft)
 				DoneCallback();
 		};
+		RTT->RTT_MR = RTT_MR;
 	}
 	else
 		DoneCallback();
@@ -1323,18 +1331,17 @@ void RealTimerClass::Allocatable(bool A) const
 #endif
 void PeripheralTimerClass::Pause() const
 {
-	if (const uint8_t TCCLKS = (Channel.TC_CMR & TC_CMR_TCCLKS_Msk) < TC_CMR_TCCLKS_XC0)
+	const uint8_t TCCLKS = Channel.TC_CMR & TC_CMR_TCCLKS_Msk;
+	if (TCCLKS < TC_CMR_TCCLKS_XC0)
 	{
 		_State.TCCLKS = TCCLKS;
 		Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | TC_CMR_TCCLKS_XC0;
-		Serial.println("暂停");
 	}
 }
 void PeripheralTimerClass::Continue() const
 {
 	if ((Channel.TC_CMR & TC_CMR_TCCLKS_Msk) > TC_CMR_TCCLKS_TIMER_CLOCK5)
 		Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | _State.TCCLKS;
-		Serial.println("恢复");
 }
 #define HandlerDef(Index)                                                          \
 	void TC##Index##_Handler()                                                     \
