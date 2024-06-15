@@ -121,22 +121,22 @@ namespace Timers_one_for_all
 		void Allocatable(bool A) const { _State.Allocatable = A; }
 #endif
 #ifdef ARDUINO_ARCH_SAM
-		// 暂停计时器。暂停一个已暂停的计时器将不做任何事
+		// 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
 		virtual void Pause() const = 0;
-		// 继续计时器。继续一个未暂停的计时器将不做任何事
+		// 继续计时器。继续一个非处于暂停状态的计时器将不做任何事
 		virtual void Continue() const = 0;
-		// 指示当前计时器是否接受自动分配
+		// 指示当前计时器是否接受自动分配。接受分配的计时器不一定空闲，应以Busy的返回值为准
 		virtual bool Allocatable() const = 0;
-		// 设置当前计时器是否接受自动分配
+		// 设置当前计时器是否接受自动分配。此项设置不会改变即使器的忙闲状态。
 		virtual void Allocatable(bool A) const = 0;
 #endif
-		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。
+		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 		virtual bool Busy() const = 0;
-		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。
+		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() const = 0;
 		// 开始计时任务。稍后可用GetTiming获取已记录的时间。
 		virtual void StartTiming() const = 0;
-		// 获取已记录的时间，模板参数指定要返回的std::chrono::duration时间格式。
+		// 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
 		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。注意，Arduino内置delay函数不能在中断中使用，但本函数确实可以在中断中使用。此方法一定会覆盖计时器的上一个任务，即使时长为0
@@ -433,7 +433,7 @@ namespace Timers_one_for_all
 			{_TimerStates[(size_t)_PeripheralEnum::Timer8], TC2->TC_CHANNEL[2], TC8_IRQn, ID_TC8},
 #endif
 	};
-	// 所有可用的硬件计时器。此数组可用TimerEnum转换为size_t索引以获取对应指针。
+	// 所有可用的硬件计时器。此数组可用TimerEnum转换为size_t索引以获取对应指针。所有计时器默认接受自动分配。
 	constexpr const TimerClass *HardwareTimers[] =
 		{
 #ifdef TOFA_SYSTIMER
@@ -471,6 +471,6 @@ namespace Timers_one_for_all
 #endif
 	};
 #endif
-	// 分配空闲的计时器。如果没有空闲的计时器，返回nullptr。此方法优先返回HardwareTimers中序数较大的的计时器。在进入setup之前的全局变量初始化阶段，不能调用此方法。
+	// 分配一个接受自动分配的计时器。如果没有这样的计时器，返回nullptr。此方法优先返回HardwareTimers中序数较大的的计时器。在进入setup之前调用此方法是未定义行为。被此方法分配返回的计时器将不再接受自动分配，需要手动设置Allocatable才能使其重新接受自动分配。
 	const TimerClass *AllocateTimer();
 }
