@@ -90,9 +90,9 @@ namespace Timers_one_for_all
 			return *(volatile T *)Value = New;
 		}
 		constexpr _RuntimeReference(size_t Value) : Value(Value) {}
+		const size_t Value;
 
 	protected:
-		const size_t Value;
 	};
 #endif
 	struct TimerClass
@@ -139,7 +139,7 @@ namespace Timers_one_for_all
 		// 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
-		// 阻塞Duration时长。在主线程中调用将仅阻塞主线程，可以被其它线程中断。在中断线程中调用将阻塞所有线程，无法被中断，可能导致其它依赖中断的任务出现未定义行为。注意，Arduino内置delay函数不能在中断中使用，但本函数确实可以在中断中使用。此方法一定会覆盖计时器的上一个任务，即使时长为0
+		// 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 		template <typename T>
 		void Delay(T Duration) const { Delay(std::chrono::duration_cast<Tick>(Duration)); }
 		// 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。此方法一定会覆盖计时器的上一个任务，即使延时为0

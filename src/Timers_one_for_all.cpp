@@ -144,10 +144,10 @@ void TimerClass2::Stop() const
 }
 void TimerClass0::StartTiming() const
 {
+	TIMSK0 = 1 << TOIE0;
 	TCNT0 = 0;
 	TCCR0B = 1;
 	TCCR0A = 0;
-	TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 	_State.OverflowCountA = 0;
 	_State.COMPA = &(_State.HandlerA = [&_State = _State]()
 					 {
@@ -161,13 +161,14 @@ void TimerClass0::StartTiming() const
 	{ OverflowCount++; };
 	OCR0A = 0;
 	TIFR0 = -1;
+	TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 }
 void TimerClass1::StartTiming() const
 {
+	TIMSK = 0;
 	TCNT = 0;
 	TCCRB = 1;
 	TCCRA = 0;
-	TIMSK = 1 << TOIE1;
 	_State.OverflowCountA = 0;
 	_State.OVF = &(_State.HandlerA = [this]()
 				   {
@@ -180,13 +181,14 @@ void TimerClass1::StartTiming() const
 	_State.HandlerB = [&OverflowCount = _State.OverflowCountA]()
 	{ OverflowCount++; };
 	TIFR = -1;
+	TIMSK = 1 << TOIE1;
 }
 void TimerClass2::StartTiming() const
 {
+	TIMSK2 = 0;
 	TCNT2 = 0;
 	TCCR2B = 1;
 	TCCR2A = 0;
-	TIMSK2 = 1 << TOIE1;
 	_State.OverflowCountA = 0;
 	_State.OVF = &(_State.HandlerA = [&_State = _State]()
 				   {
@@ -199,6 +201,7 @@ void TimerClass2::StartTiming() const
 	_State.HandlerB = [&OverflowCount = _State.OverflowCountA]()
 	{ OverflowCount++; };
 	TIFR2 = -1;
+	TIMSK2 = 1 << TOIE1;
 }
 Tick TimerClass0::GetTiming() const
 {
@@ -216,21 +219,32 @@ Tick TimerClass2::GetTiming() const
 	return Tick(((uint64_t)_State.OverflowCountA << 8) + TCNT2 << Prescaler2::BitShifts[Clock ? Clock : _State.Clock]);
 }
 // 返回OverflowTarget
+template <typename T>
+struct FirstArgumentType;
+template <typename R, typename FirstArg, typename... Args>
+struct FirstArgumentType<R(FirstArg, Args...)>
+{
+	using type = FirstArg;
+};
+template <typename T>
+using FirstArgumentType_t = typename FirstArgumentType<T>::type;
 template <typename Prescaler>
 uint32_t PrescalerOverflow(uint32_t Cycles, volatile uint8_t &Clock)
 {
-	constexpr uint8_t MaxBits = std::extent_v<decltype(Prescaler::BitsToPrescaler)>;
-	const uint8_t CycleBits = Cycles ? sizeof(Cycles) * 8 - 1 - __builtin_clz(Cycles) : 0; // Cycles为0时避免CycleBits下溢
-	if (CycleBits < MaxBits)
+	if (const uint32_t OverflowTarget = Cycles >> Prescaler::MaxShift)
 	{
-		Clock = Prescaler::BitsToPrescaler[CycleBits];
-		return 0;
+		Clock = Prescaler::MaxClock;
+		return OverflowTarget;
 	}
 	else
-		return Cycles >> Prescaler::BitShifts[Clock = Prescaler::BitsToPrescaler[MaxBits - 1]];
+	{
+		Clock = Cycles ? Prescaler::BitsToPrescaler[sizeof(FirstArgumentType_t<decltype(__builtin_clz)>) * 8 - 1 - __builtin_clz(Cycles)] : 1;
+		return 0;
+	}
 }
 void TimerClass0::Delay(Tick Time) const
 {
+	TIMSK0 = 1 << TOIE0;
 	TCNT0 = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCR0B) + 1;
 	OCR0A = Time.count() >> Prescaler01::BitShifts[TCCR0B];
@@ -247,6 +261,7 @@ void TimerClass0::Delay(Tick Time) const
 }
 void TimerClass1::Delay(Tick Time) const
 {
+	TIMSK = 0;
 	TCNT = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 16, TCCRB) + 1;
 	OCRA = Time.count() >> Prescaler01::BitShifts[TCCRB];
@@ -262,6 +277,7 @@ void TimerClass1::Delay(Tick Time) const
 }
 void TimerClass2::Delay(Tick Time) const
 {
+	TIMSK2 = 0;
 	TCNT2 = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler2>(Time.count() >> 8, TCCR2B) + 1;
 	OCR2A = Time.count() >> Prescaler2::BitShifts[TCCR2B];
@@ -277,6 +293,7 @@ void TimerClass2::Delay(Tick Time) const
 }
 void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
 {
+	TIMSK0 = 1 << TOIE0;
 	TCNT0 = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler01>(After.count() >> 8, TCCR0B) + 1;
 	OCR0A = After.count() >> Prescaler01::BitShifts[TCCR0B];
@@ -293,6 +310,7 @@ void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
 }
 void TimerClass1::DoAfter(Tick After, std::function<void()> Do) const
 {
+	TIMSK = 0;
 	TCNT = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler01>(After.count() >> 16, TCCRB) + 1;
 	OCRA = After.count() >> Prescaler01::BitShifts[TCCRB];
@@ -303,12 +321,17 @@ void TimerClass1::DoAfter(Tick After, std::function<void()> Do) const
 			TIMSK = 0;
 			Do();
 		} });
-	TCCRA = 0;
+	Serial.print("OCR5A: ");
+	Serial.println(OCR5A);
+	(*(volatile uint8_t *)(0x120)) = 0;
+	Serial.print("OCR5A: ");
+	Serial.println(OCR5A);
 	TIFR = -1;
 	TIMSK = 1 << OCIE1A;
 }
 void TimerClass2::DoAfter(Tick After, std::function<void()> Do) const
 {
+	TIMSK2 = 0;
 	TCNT2 = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler2>(After.count() >> 8, TCCR2B) + 1;
 	OCR2A = After.count() >> Prescaler2::BitShifts[TCCR2B];
@@ -327,6 +350,7 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 {
 	if (RepeatTimes)
 	{
+		TIMSK0 = 1 << TOIE0;
 		TCNT0 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 8, TCCR0B))
 		{
@@ -375,6 +399,7 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 {
 	if (RepeatTimes)
 	{
+		TIMSK = 0;
 		TCNT = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 16, TCCRB))
 		{
@@ -383,18 +408,20 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 			_State.OverflowCountA = ++OverflowTarget;
 			_State.COMPA = &(_State.HandlerA = [this, Do, DoneCallback, OverflowTarget, OcraTarget]()
 							 {
-								if(!--_State.OverflowCountA){
-				if (--_State.RepeatLeft)
+				if (!--_State.OverflowCountA)
 				{
-					_State.OverflowCountA = OverflowTarget;
-					OCRA+=OcraTarget;
-				}
-				else
-					TIMSK = 0;
-				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-				Do();
-				if (!_State.RepeatLeft)
-					DoneCallback(); } });
+					if (--_State.RepeatLeft)
+					{
+						_State.OverflowCountA = OverflowTarget;
+						OCRA += OcraTarget;
+					}
+					else
+						TIMSK = 0;
+					// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+					Do();
+					if (!_State.RepeatLeft)
+						DoneCallback();
+				} });
 		}
 		else
 		{
@@ -421,6 +448,7 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 {
 	if (RepeatTimes)
 	{
+		TIMSK2 = 0;
 		TCNT2 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler2>(Every.count() >> 8, TCCR2B))
 		{
@@ -467,6 +495,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 {
 	if (NumHalfPeriods)
 	{
+		TIMSK0 = 1 << TOIE0;
 		AfterB += AfterA;
 		TCNT0 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(AfterB.count() >> 8, TCCR0B))
@@ -541,6 +570,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 {
 	if (NumHalfPeriods)
 	{
+		TIMSK = 0;
 		AfterB += AfterA;
 		TCNT = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(AfterB.count() >> 16, TCCRB))
@@ -615,6 +645,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 {
 	if (NumHalfPeriods)
 	{
+		TIMSK2 = 0;
 		AfterB += AfterA;
 		TCNT2 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler2>(AfterB.count() >> 8, TCCR2B))
@@ -688,17 +719,16 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 #endif
 #ifdef ARDUINO_ARCH_SAM
 #ifdef TOFA_SYSTIMER
+// 系统计时器实测不符合文档描述。设置 CTRL ENABLE 不能将LOAD载入VAL，只能手动设置VAL，但只能将其设为0，设为0以外的任何值都会自动变成0。用这种方式使得VAL变为0时，不会触发中断。VAL载入LOAD需要不确定的时间，需要循环等待VAL已载入后才能修改LOAD，否则旧LOAD可能会被丢弃。这个载入时间与CLKSOURCE无关。VAL载入LOAD发生在中断之前，所以在中断中只能设置下次LOAD值
 static struct SystemTimerState : public _TimerState
 {
-	uint32_t LOAD;
-	std::function<void()> OverflowHandlerA;
-	std::function<void()> DoHandlerA;
-	std::function<void()> OverflowHandlerB;
-	std::function<void()> DoHandlerB;
+	uint32_t VAL;
+	std::function<void()> HandlerA;
+	std::function<void()> HandlerB;
 	uint32_t OverflowCount;
 	SystemTimerState() { Handler = nullptr; }
 } SystemState;
-int sysTickHook()
+extern "C" int sysTickHook()
 {
 	if (SystemState.Handler)
 		(*SystemState.Handler)();
@@ -706,45 +736,39 @@ int sysTickHook()
 }
 bool SystemTimerClass::Busy() const
 {
-	return SysTick->CTRL & SysTick_CTRL_ENABLE_Msk;
+	return SysTick->CTRL & SysTick_CTRL_TICKINT_Msk;
 }
 void SystemTimerClass::Pause() const
 {
 	if (SysTick->CTRL & SysTick_CTRL_ENABLE_Msk)
-	{
-		SystemState.LOAD = SysTick->LOAD;
-		SysTick->LOAD = SysTick->VAL;
 		SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
-	}
 }
 void SystemTimerClass::Continue() const
 {
-	if (!(SysTick->CTRL & SysTick_CTRL_ENABLE_Msk))
-	{
+	if ((SysTick->CTRL & (SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk)) == SysTick_CTRL_TICKINT_Msk)
 		SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
-		SysTick->LOAD = SystemState.LOAD; // 不是伪暂停，可以完美恢复状态
-	}
 }
 void SystemTimerClass::Stop() const
 {
-	SysTick->CTRL = 0; // 不能简单将Handler设为0，可能陷入无限中断
+	SysTick->CTRL = 0; // 不能简单将Handler设为nullptr，可能陷入无限中断
 }
 constexpr uint32_t SysTick_CTRL_MCK8 = SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
 constexpr uint32_t SysTick_CTRL_MCK = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_MCK8;
 void SystemTimerClass::StartTiming() const
 {
+	SysTick->VAL = 0;
 	SysTick->LOAD = -1;
 	SysTick->CTRL = SysTick_CTRL_MCK;
 	SystemState.OverflowCount = 8;
-	SystemState.OverflowHandlerB = []()
+	SystemState.HandlerB = []()
 	{ SystemState.OverflowCount++; };
-	SystemState.Handler = &(SystemState.OverflowHandlerA = []()
+	SystemState.Handler = &(SystemState.HandlerA = []()
 							{
 		if (!--SystemState.OverflowCount)
 		{
 			SysTick->CTRL = SysTick_CTRL_MCK8;
 			SystemState.OverflowCount = 1;
-			SystemState.Handler = &SystemState.OverflowHandlerB;
+			SystemState.Handler = &SystemState.HandlerB;
 		} });
 }
 Tick SystemTimerClass::GetTiming() const
@@ -754,6 +778,7 @@ Tick SystemTimerClass::GetTiming() const
 void SystemTimerClass::Delay(Tick Time) const
 {
 	SysTick->CTRL = 0;
+	SysTick->VAL = 0;
 	uint64_t TimeTicks = Time.count();
 	uint32_t CTRL = SysTick_CTRL_MCK;
 	if (TimeTicks >> 24)
@@ -761,16 +786,22 @@ void SystemTimerClass::Delay(Tick Time) const
 		TimeTicks >>= 3;
 		if (volatile uint32_t OverflowCount = TimeTicks >> 24)
 		{
-			SysTick->LOAD = -1;
+			OverflowCount++;
+			SystemState.Handler = &(SystemState.HandlerA = [&OverflowCount]()
+									{ if(!--OverflowCount)
+									SysTick->CTRL=0; });
+			SysTick->LOAD = TimeTicks;
 			SysTick->CTRL = SysTick_CTRL_MCK8;
-			SystemState.Handler = &(SystemState.OverflowHandlerA = [&OverflowCount]()
-									{ --OverflowCount; });
-			while (OverflowCount)
+			while (!SysTick->VAL)
 				;
+			SysTick->LOAD = -1;
+			while (SysTick->CTRL & SysTick_CTRL_ENABLE_Msk)
+				;
+			return;
 		}
 		CTRL = SysTick_CTRL_MCK8;
 	}
-	SystemState.Handler = &(SystemState.OverflowHandlerA = []()
+	SystemState.Handler = &(SystemState.HandlerA = []()
 							{ SysTick->CTRL = 0; });
 	SysTick->LOAD = TimeTicks;
 	SysTick->CTRL = CTRL;
@@ -780,6 +811,7 @@ void SystemTimerClass::Delay(Tick Time) const
 void SystemTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 {
 	SysTick->CTRL = 0;
+	SysTick->VAL = 0;
 	uint64_t TimeTicks = After.count();
 	uint32_t CTRL = SysTick_CTRL_MCK;
 	Do = [Do]()
@@ -792,21 +824,20 @@ void SystemTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		TimeTicks >>= 3;
 		if (SystemState.OverflowCount = TimeTicks >> 24)
 		{
-			SysTick->LOAD = -1;
-			SysTick->CTRL = SysTick_CTRL_MCK8;
-			SystemState.Handler = &(SystemState.OverflowHandlerA = [TimeTicks, Do]()
+			SystemState.Handler = &(SystemState.HandlerA = [Do]()
 									{
 				if (!--SystemState.OverflowCount)
-				{
-					SysTick->LOAD = TimeTicks & 0xffffff;
-					SysTick->CTRL = SysTick_CTRL_MCK8;
-					SystemState.Handler = &Do;
-				} });
+					SystemState.Handler = &Do; });
+			SysTick->LOAD = TimeTicks;
+			SysTick->CTRL = SysTick_CTRL_MCK8;
+			while (!SysTick->VAL)
+				;
+			SysTick->LOAD = -1;
 			return;
 		}
 		CTRL = SysTick_CTRL_MCK8;
 	}
-	SystemState.Handler = &(SystemState.OverflowHandlerA = Do);
+	SystemState.Handler = &(SystemState.HandlerA = Do);
 	SysTick->LOAD = TimeTicks;
 	SysTick->CTRL = CTRL;
 }
@@ -815,49 +846,50 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_
 	if (RepeatTimes)
 	{
 		SysTick->CTRL = 0;
+		SysTick->VAL = 0;
 		uint64_t TimeTicks = Every.count();
 		uint32_t CTRL = SysTick_CTRL_MCK;
 		SystemState.RepeatLeft = RepeatTimes;
 		if (TimeTicks >> 24)
 		{
 			TimeTicks >>= 3;
-			if (const uint32_t OverflowTarget = TimeTicks >> 24)
+			if (uint32_t OverflowTarget = TimeTicks >> 24)
 			{
-				SysTick->LOAD = -1;
-				SysTick->CTRL = SysTick_CTRL_MCK8;
-				const uint32_t TicksLeft = TimeTicks & 0xffffff;
+				const uint32_t LOAD = TimeTicks;
+				OverflowTarget++;
 				SystemState.OverflowCount = OverflowTarget;
-				SystemState.Handler = &(SystemState.OverflowHandlerA = [TicksLeft]()
+				SystemState.Handler = &(SystemState.HandlerA = [Do, OverflowTarget, LOAD, DoneCallback]()
 										{
-					if (!--SystemState.OverflowCount)
+					switch (--SystemState.OverflowCount)
 					{
-						SysTick->LOAD = TicksLeft;
-						SysTick->CTRL = SysTick_CTRL_MCK8;
-						SystemState.Handler = &SystemState.DoHandlerA;
+					case 0:
+						if (--SystemState.RepeatLeft)
+						{
+							SysTick->LOAD = -1;
+							SystemState.OverflowCount = OverflowTarget;
+						}
+						else
+							SysTick->CTRL = 0;
+						Do();
+						if (!SystemState.RepeatLeft)
+							DoneCallback();
+						break;
+					case 1:
+						SysTick->LOAD = LOAD;
 					} });
-				SystemState.DoHandlerA = [Do, DoneCallback, OverflowTarget]()
-				{
-					if (--SystemState.RepeatLeft)
-					{
-						SysTick->LOAD = -1;
-						SysTick->CTRL = SysTick_CTRL_MCK8;
-						SystemState.OverflowCount = OverflowTarget;
-						SystemState.Handler = &SystemState.OverflowHandlerA;
-					}
-					else
-						SystemState.Handler = nullptr;
-					Do();
-					if (!SystemState.RepeatLeft)
-						DoneCallback();
-				};
+				SysTick->LOAD = LOAD;
+				SysTick->CTRL = SysTick_CTRL_MCK8;
+				while (!SysTick->VAL)
+					;
+				SysTick->LOAD = -1;
 				return;
 			}
 			CTRL = SysTick_CTRL_MCK8;
 		}
-		SystemState.Handler = &(SystemState.DoHandlerA = [Do, DoneCallback]()
+		SystemState.Handler = &(SystemState.HandlerA = [Do, DoneCallback]()
 								{
 			if (!--SystemState.RepeatLeft)
-				SystemState.Handler = nullptr;
+				SysTick->CTRL = 0;
 			Do();
 			if (!SystemState.RepeatLeft)
 				DoneCallback(); });
@@ -872,114 +904,187 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 	if (NumHalfPeriods)
 	{
 		SysTick->CTRL = 0;
+		SysTick->VAL = 0;
 		uint64_t TimeTicksA = AfterA.count();
 		uint64_t TimeTicksB = AfterB.count();
 		uint32_t CTRL = SysTick_CTRL_MCK;
+		SysTick->LOAD = -1;
 		if (max(TimeTicksA, TimeTicksB) >> 24)
 		{
 			TimeTicksA >>= 3;
 			TimeTicksB >>= 3;
+			uint32_t OverflowTargetA = (TimeTicksA >> 24);
+			uint32_t OverflowTargetB = (TimeTicksB >> 24);
+			if (max(OverflowTargetA, OverflowTargetB))
+			{
+				const uint32_t TicksLeftA = TimeTicksA;
+				const uint32_t TicksLeftB = TimeTicksB;
+				if (OverflowTargetA)
+				{
+					SystemState.OverflowCount = ++OverflowTargetA;
+					if (OverflowTargetB)
+					{
+						OverflowTargetB++;
+						SystemState.HandlerA = [TicksLeftB, OverflowTargetB, DoA, DoneCallback]()
+						{
+							switch (--SystemState.OverflowCount)
+							{
+							case 0:
+								if (--SystemState.RepeatLeft)
+								{
+									SysTick->LOAD = -1;
+									SystemState.OverflowCount = OverflowTargetB;
+									SystemState.Handler = &SystemState.HandlerB;
+								}
+								else
+									SysTick->CTRL = 0;
+								DoA();
+								if (!SystemState.RepeatLeft)
+									DoneCallback();
+								break;
+							case 1:
+								SysTick->LOAD = TicksLeftB;
+							}
+						};
+						SystemState.HandlerB = [TicksLeftA, OverflowTargetA, DoB, DoneCallback]()
+						{
+							switch (--SystemState.OverflowCount)
+							{
+							case 0:
+								if (--SystemState.RepeatLeft)
+								{
+									SysTick->LOAD = -1;
+									SystemState.OverflowCount = OverflowTargetA;
+									SystemState.Handler = &SystemState.HandlerA;
+								}
+								else
+									SysTick->CTRL = 0;
+								DoB();
+								if (!SystemState.RepeatLeft)
+									DoneCallback();
+								break;
+							case 1:
+								SysTick->LOAD = TicksLeftA;
+							}
+						};
+					}
+					else
+					{
+						SystemState.HandlerA = [TicksLeftB, TicksLeftA, DoA, DoneCallback]()
+						{
+							switch (--SystemState.OverflowCount)
+							{
+							case 0:
+								if (--SystemState.RepeatLeft)
+								{
+									SysTick->LOAD = TicksLeftA;
+									SystemState.Handler = &SystemState.HandlerB;
+								}
+								else
+									SysTick->CTRL = 0;
+								DoA();
+								if (!SystemState.RepeatLeft)
+									DoneCallback();
+								break;
+							case 1:
+								SysTick->LOAD = TicksLeftB;
+							}
+						};
+						SystemState.HandlerB = [OverflowTargetA, DoB, DoneCallback]()
+						{
+							if (--SystemState.RepeatLeft)
+							{
+								SysTick->LOAD = -1;
+								SystemState.OverflowCount = OverflowTargetA;
+								SystemState.Handler = &SystemState.HandlerA;
+							}
+							else
+								SysTick->CTRL = 0;
+							DoB();
+							if (!SystemState.RepeatLeft)
+								DoneCallback();
+						};
+					}
+				}
+				else
+				{
+					SystemState.HandlerA = [OverflowTargetB, DoA, DoneCallback]()
+					{
+						if (--SystemState.RepeatLeft)
+						{
+							SysTick->LOAD = -1;
+							SystemState.OverflowCount = OverflowTargetB;
+							SystemState.Handler = &SystemState.HandlerB;
+						}
+						else
+							SysTick->CTRL = 0;
+						DoA();
+						if (!SystemState.RepeatLeft)
+							DoneCallback();
+					};
+					SystemState.HandlerB = [TicksLeftA, TicksLeftB, DoB, DoneCallback]()
+					{
+						switch (--SystemState.OverflowCount)
+						{
+						case 0:
+							if (--SystemState.RepeatLeft)
+							{
+								SysTick->LOAD = TicksLeftB;
+								SystemState.Handler = &SystemState.HandlerA;
+							}
+							else
+								SysTick->CTRL = 0;
+							DoB();
+							if (!SystemState.RepeatLeft)
+								DoneCallback();
+							break;
+						case 1:
+							SysTick->LOAD = TicksLeftA;
+						}
+					};
+				}
+				SystemState.Handler = &SystemState.HandlerA;
+				SysTick->LOAD = TicksLeftA;
+				SysTick->CTRL = SysTick_CTRL_MCK8;
+				while (!SysTick->VAL)
+					;
+				SysTick->LOAD = OverflowTargetA ? -1 : TicksLeftB;
+				return;
+			}
 			CTRL = SysTick_CTRL_MCK8;
 		}
-		const uint32_t OverflowTargetA = TimeTicksA >> 24;
-		if (OverflowTargetA)
-		{
-			SysTick->LOAD = -1;
-			SystemState.OverflowCount = OverflowTargetA;
-			const uint32_t TicksLeft = TimeTicksA & 0xffffff;
-			SystemState.OverflowHandlerA = [TicksLeft]()
-			{
-				if (!--SystemState.OverflowCount)
-				{
-					SysTick->LOAD = TicksLeft;
-					SysTick->CTRL = SysTick_CTRL_MCK8;
-					SystemState.Handler = &SystemState.DoHandlerA;
-				}
-			};
-			SystemState.DoHandlerB = [DoB, DoneCallback, OverflowTargetA, TicksLeft]()
-			{
+		const uint32_t TicksLeftA = TimeTicksA;
+		const uint32_t TicksLeftB = TimeTicksB;
+		SystemState.Handler = &(SystemState.HandlerA = [TicksLeftA, DoA, DoneCallback]()
+								{
 				if (--SystemState.RepeatLeft)
 				{
-					SysTick->LOAD = -1;
-					SysTick->CTRL = SysTick_CTRL_MCK8;
-					SystemState.Handler = &SystemState.OverflowHandlerA;
-					SystemState.OverflowCount = OverflowTargetA;
+					SysTick->LOAD = TicksLeftA;
+					SystemState.Handler = &SystemState.HandlerB;
 				}
 				else
-					SystemState.Handler = nullptr;
-				DoB();
-				if (SystemState.RepeatLeft)
-					DoneCallback();
-			};
-		}
-		else
-		{
-			const uint32_t TicksLeft = TimeTicksA;
-			SysTick->LOAD = TicksLeft;
-			SystemState.DoHandlerB = [DoB, DoneCallback, TicksLeft]()
-			{
-				if (--SystemState.RepeatLeft)
-				{
-					SysTick->LOAD = TicksLeft;
-					SysTick->CTRL = SysTick->CTRL;
-					SystemState.Handler = &SystemState.DoHandlerA;
-				}
-				else
-					SystemState.Handler = nullptr;
-				DoB();
-				if (SystemState.RepeatLeft)
-					DoneCallback();
-			};
-		}
-		if (const uint32_t OverflowTargetB = TimeTicksB >> 24)
-		{
-			const uint32_t TicksLeft = TimeTicksB & 0xffffff;
-			SystemState.OverflowHandlerB = [TicksLeft]()
-			{
-				if (!--SystemState.OverflowCount)
-				{
-					SysTick->LOAD = TicksLeft;
-					SysTick->CTRL = SysTick_CTRL_MCK8;
-					SystemState.Handler = &SystemState.DoHandlerB;
-				}
-			};
-			SystemState.DoHandlerA = [DoA, DoneCallback, OverflowTargetB, TicksLeft]()
-			{
-				if (--SystemState.RepeatLeft)
-				{
-					SysTick->LOAD = -1;
-					SysTick->CTRL = SysTick_CTRL_MCK8;
-					SystemState.Handler = &SystemState.OverflowHandlerB;
-					SystemState.OverflowCount = OverflowTargetB;
-				}
-				else
-					SystemState.Handler = nullptr;
+					SysTick->CTRL = 0;
 				DoA();
-				if (SystemState.RepeatLeft)
-					DoneCallback();
-			};
-		}
-		else
+				if (!SystemState.RepeatLeft)
+					DoneCallback(); });
+		SystemState.HandlerB = [TicksLeftB, DoB, DoneCallback]()
 		{
-			const uint32_t TicksLeft = TimeTicksB;
-			SystemState.DoHandlerA = [DoA, DoneCallback, TicksLeft]()
+			if (--SystemState.RepeatLeft)
 			{
-				if (--SystemState.RepeatLeft)
-				{
-					SysTick->LOAD = TicksLeft;
-					SysTick->CTRL = SysTick->CTRL;
-					SystemState.Handler = &SystemState.DoHandlerB;
-				}
-				else
-					SystemState.Handler = nullptr;
-				DoA();
-				if (SystemState.RepeatLeft)
-					DoneCallback();
-			};
-		}
-		SystemState.Handler = &(OverflowTargetA ? SystemState.OverflowHandlerA : SystemState.DoHandlerA);
-		SystemState.RepeatLeft = NumHalfPeriods;
+				SysTick->LOAD = TicksLeftB;
+				SystemState.Handler = &SystemState.HandlerA;
+			}
+			else
+				SysTick->CTRL = 0;
+			DoB();
+			if (!SystemState.RepeatLeft)
+				DoneCallback();
+		};
+		SysTick->LOAD = TicksLeftA;
 		SysTick->CTRL = CTRL;
+		while (!SysTick->VAL)
+			;
+		SysTick->LOAD = TicksLeftB;
 	}
 	else
 		DoneCallback();
@@ -1118,11 +1223,11 @@ void RealTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		if (RealState.OverflowCount = RTPRES >> 16)
 		{
 			RTT->RTT_AR = TimerTicks >> 16;
-			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 			RealState.Handler = &(RealState.HandlerA = [Do]()
 								  {
 				if (!--RealState.OverflowCount)
 					Do(); });
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 			return;
 		}
 		else
@@ -1150,7 +1255,6 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 			{
 				const uint32_t RTT_AR = TimerTicks >> 16;
 				RTT->RTT_AR = RTT_AR;
-				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 				RealState.OverflowCount = ++OverflowTarget;
 				RealState.Handler = &(RealState.HandlerA = [Do, RTT_AR, OverflowTarget, DoneCallback]()
 									  {
@@ -1171,6 +1275,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 						if (!RealState.RepeatLeft)
 							DoneCallback();
 					} });
+				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 			}
 			else
 			{
@@ -1192,7 +1297,6 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 		{
 			const uint32_t RTT_AR = TimerTicks;
 			RTT->RTT_AR = RTT_AR;
-			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 			RealState.Handler = &(RealState.HandlerA = [Do, DoneCallback, RTT_AR]()
 								  {
 				if (--RealState.RepeatLeft)
@@ -1205,7 +1309,9 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 				Do();
 				if (!RealState.RepeatLeft)
 					DoneCallback(); });
+			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 		}
+		RealState.RepeatLeft = RepeatTimes;
 		while (RTT->RTT_SR)
 			;
 		NVIC_EnableIRQ(RTT_IRQn);
