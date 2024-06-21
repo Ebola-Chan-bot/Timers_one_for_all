@@ -4,7 +4,7 @@ using namespace Timers_one_for_all;
 static const TimerClass *Timer;
 void setup() {
   Serial.begin(9600);
-  (Timer = &HardwareTimer0)->StartTiming();
+  (Timer = AllocateTimer())->StartTiming();
 }
 void loop() {
   std::cout << "输入任意字符，按Enter显示已经运行了几秒：";

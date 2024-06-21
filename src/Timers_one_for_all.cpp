@@ -247,13 +247,13 @@ void TimerClass0::Delay(Tick Time) const
 	TIMSK0 = 1 << TOIE0;
 	TCNT0 = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 8, TCCR0B) + 1;
+	TCCR0A = 0; // 必须先确保TCCRA低2位全0，否则OCRA会受到限制
 	OCR0A = Time.count() >> Prescaler01::BitShifts[TCCR0B];
 	_State.COMPA = &(_State.HandlerA = [&OverflowCount]()
 					 {
 						 if (!--OverflowCount)
 							 TIMSK0 = 1 << TOIE0; // 由中断负责停止计时器，避免OverflowCount下溢
 					 });
-	TCCR0A = 0;
 	TIFR0 = -1;
 	TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
 	while (OverflowCount)
@@ -264,12 +264,12 @@ void TimerClass1::Delay(Tick Time) const
 	TIMSK = 0;
 	TCNT = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler01>(Time.count() >> 16, TCCRB) + 1;
+	TCCRA = 0;
 	OCRA = Time.count() >> Prescaler01::BitShifts[TCCRB];
 	_State.COMPA = &(_State.HandlerA = [&TIMSK = TIMSK, &OverflowCount]()
 					 {
 						 if (!--OverflowCount)
 							 TIMSK = 0; });
-	TCCRA = 0;
 	TIFR = -1;
 	TIMSK = 1 << OCIE1A;
 	while (OverflowCount)
@@ -280,12 +280,12 @@ void TimerClass2::Delay(Tick Time) const
 	TIMSK2 = 0;
 	TCNT2 = 0;
 	volatile uint32_t OverflowCount = PrescalerOverflow<Prescaler2>(Time.count() >> 8, TCCR2B) + 1;
+	TCCR2A = 0;
 	OCR2A = Time.count() >> Prescaler2::BitShifts[TCCR2B];
 	_State.COMPA = &(_State.HandlerA = [&OverflowCount]()
 					 {
 						 if (!--OverflowCount)
 							 TIMSK2 = 0; });
-	TCCR2A = 0;
 	TIFR2 = -1;
 	TIMSK2 = 1 << OCIE2A;
 	while (OverflowCount)
@@ -296,6 +296,7 @@ void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
 	TIMSK0 = 1 << TOIE0;
 	TCNT0 = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler01>(After.count() >> 8, TCCR0B) + 1;
+	TCCR0A = 0;
 	OCR0A = After.count() >> Prescaler01::BitShifts[TCCR0B];
 	_State.COMPA = &(_State.HandlerA = [&OverflowCount = _State.OverflowCountA, Do]()
 					 {
@@ -304,7 +305,6 @@ void TimerClass0::DoAfter(Tick After, std::function<void()> Do) const
 			TIMSK0 = 1 << TOIE0;
 			Do();
 		} });
-	TCCR0A = 0;
 	TIFR0 = -1;
 	TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
 }
@@ -313,6 +313,7 @@ void TimerClass1::DoAfter(Tick After, std::function<void()> Do) const
 	TIMSK = 0;
 	TCNT = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler01>(After.count() >> 16, TCCRB) + 1;
+	TCCRA = 0;
 	OCRA = After.count() >> Prescaler01::BitShifts[TCCRB];
 	_State.COMPA = &(_State.HandlerA = [this, Do]()
 					 {
@@ -321,11 +322,6 @@ void TimerClass1::DoAfter(Tick After, std::function<void()> Do) const
 			TIMSK = 0;
 			Do();
 		} });
-	Serial.print("OCR5A: ");
-	Serial.println(OCR5A);
-	(*(volatile uint8_t *)(0x120)) = 0;
-	Serial.print("OCR5A: ");
-	Serial.println(OCR5A);
 	TIFR = -1;
 	TIMSK = 1 << OCIE1A;
 }
@@ -334,6 +330,7 @@ void TimerClass2::DoAfter(Tick After, std::function<void()> Do) const
 	TIMSK2 = 0;
 	TCNT2 = 0;
 	_State.OverflowCountA = PrescalerOverflow<Prescaler2>(After.count() >> 8, TCCR2B) + 1;
+	TCCR2A = 0;
 	OCR2A = After.count() >> Prescaler2::BitShifts[TCCR2B];
 	_State.COMPA = &(_State.HandlerA = [&OverflowCount = _State.OverflowCountA, Do]()
 					 {
@@ -342,7 +339,6 @@ void TimerClass2::DoAfter(Tick After, std::function<void()> Do) const
 			TIMSK2 = 0;
 			Do();
 		} });
-	TCCR2A = 0;
 	TIFR2 = -1;
 	TIMSK2 = 1 << OCIE2A;
 }
@@ -356,6 +352,7 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		{
 			// 在有溢出情况下，CTC需要多用一个中断且逻辑更复杂，毫无必要，直接用加法更简明
 			const uint8_t OcraTarget = Every.count() >> Prescaler01::MaxShift;
+			TCCR0A = 0;
 			OCR0A = OcraTarget;
 			_State.OverflowCountA = ++OverflowTarget;
 			_State.COMPA = &(_State.HandlerA = [&_State = _State, Do, DoneCallback, OverflowTarget, OcraTarget]()
@@ -373,10 +370,10 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 				Do();
 				if (!_State.RepeatLeft)
 					DoneCallback(); } });
-			TCCR0A = 0;
 		}
 		else
 		{
+			TCCR0A = 1 << WGM01;
 			OCR0A = Every.count() >> Prescaler01::BitShifts[TCCR0B];
 			_State.COMPA = &(_State.HandlerA = [&RepeatLeft = _State.RepeatLeft, Do, DoneCallback]()
 							 {
@@ -386,7 +383,6 @@ void TimerClass0::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 				Do();
 				if (!RepeatLeft)
 					DoneCallback(); });
-			TCCR0A = 1 << WGM01;
 		}
 		TIFR0 = -1;
 		_State.RepeatLeft = RepeatTimes;
@@ -401,6 +397,7 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 	{
 		TIMSK = 0;
 		TCNT = 0;
+		TCCRA = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(Every.count() >> 16, TCCRB))
 		{
 			const uint16_t OcraTarget = Every.count() >> Prescaler01::MaxShift;
@@ -436,7 +433,6 @@ void TimerClass1::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 					DoneCallback(); });
 			TCCRB |= 1 << WGM12;
 		}
-		TCCRA = 0;
 		TIFR = -1;
 		_State.RepeatLeft = RepeatTimes;
 		TIMSK = 1 << OCIE1A;
@@ -453,6 +449,7 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler2>(Every.count() >> 8, TCCR2B))
 		{
 			const uint8_t OcraTarget = Every.count() >> Prescaler2::MaxShift;
+			TCCR2A = 0;
 			OCR2A = OcraTarget;
 			_State.OverflowCountA = ++OverflowTarget;
 			_State.COMPA = &(_State.HandlerA = [&_State = _State, Do, DoneCallback, OverflowTarget, OcraTarget]()
@@ -469,10 +466,10 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 				Do();
 				if (!_State.RepeatLeft)
 					DoneCallback(); } });
-			TCCR2A = 0;
 		}
 		else
 		{
+			TCCR2A = 1 << WGM21;
 			OCR2A = Every.count() >> Prescaler2::BitShifts[TCCR2B];
 			_State.COMPA = &(_State.HandlerA = [&RepeatLeft = _State.RepeatLeft, Do, DoneCallback]()
 							 {
@@ -482,7 +479,6 @@ void TimerClass2::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t Rep
 				Do();
 				if (!RepeatLeft)
 					DoneCallback(); });
-			TCCR2A = 1 << WGM21;
 		}
 		TIFR2 = -1;
 		_State.RepeatLeft = RepeatTimes;
@@ -500,6 +496,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 		TCNT0 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(AfterB.count() >> 8, TCCR0B))
 		{
+			TCCR0A = 0;
 			OCR0A = AfterA.count() >> Prescaler01::MaxShift;
 			_State.OverflowCountA = (AfterA.count() >> Prescaler01::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> Prescaler01::MaxShift;
@@ -535,11 +532,11 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 					if (!_State.RepeatLeft)
 						DoneCallback();
 				} });
-			TCCR0A = 0;
 		}
 		else
 		{
 			const uint8_t BitShift = Prescaler01::BitShifts[TCCR0B];
+			TCCR0A = 1 << WGM01;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR0B = AfterA.count() >> BitShift;
 			_State.COMPB = &(_State.HandlerB = [&RepeatLeft = _State.RepeatLeft, DoA, DoneCallback]()
@@ -557,7 +554,6 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 				DoB();
 				if (!RepeatLeft)
 					DoneCallback(); });
-			TCCR0A = 1 << WGM01;
 		}
 		_State.RepeatLeft = NumHalfPeriods;
 		TIFR0 = -1;
@@ -573,6 +569,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 		TIMSK = 0;
 		AfterB += AfterA;
 		TCNT = 0;
+		TCCRA = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler01>(AfterB.count() >> 16, TCCRB))
 		{
 			OCRA = AfterA.count() >> Prescaler01::MaxShift;
@@ -634,7 +631,6 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 			TCCRB |= 1 << WGM12;
 		}
 		_State.RepeatLeft = NumHalfPeriods;
-		TCCRA = 0;
 		TIFR = -1;
 		TIMSK = (1 << OCIE1A) | (1 << OCIE1B);
 	}
@@ -650,6 +646,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 		TCNT2 = 0;
 		if (uint32_t OverflowTarget = PrescalerOverflow<Prescaler2>(AfterB.count() >> 8, TCCR2B))
 		{
+			TCCR2A = 0;
 			OCR2A = AfterA.count() >> Prescaler2::MaxShift;
 			_State.OverflowCountA = (AfterA.count() >> Prescaler2::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> Prescaler2::MaxShift;
@@ -685,11 +682,11 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 					if (!_State.RepeatLeft)
 						DoneCallback();
 				} });
-			TCCR2A = 0;
 		}
 		else
 		{
 			const uint8_t BitShift = Prescaler2::BitShifts[TCCR2B];
+			TCCR2A = 1 << WGM21;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR2B = AfterA.count() >> BitShift;
 			_State.COMPB = &(_State.HandlerB = [&RepeatLeft = _State.RepeatLeft, DoA, DoneCallback]()
@@ -707,7 +704,6 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick Afte
 				DoB();
 				if (!RepeatLeft)
 					DoneCallback(); });
-			TCCR2A = 1 << WGM21;
 		}
 		_State.RepeatLeft = NumHalfPeriods;
 		TIFR2 = -1;
