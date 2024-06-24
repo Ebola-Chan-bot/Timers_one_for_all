@@ -804,13 +804,13 @@ void SystemTimerClass::Delay(Tick Time) const
 	while (SysTick->CTRL & SysTick_CTRL_ENABLE_Msk)
 		;
 }
-void SystemTimerClass::DoAfter(Tick After, std::function<void()> Do) const
+void SystemTimerClass::DoAfter(Tick After, std::function<void()> &&Do) const
 {
 	SysTick->CTRL = 0;
 	SysTick->VAL = 0;
 	uint64_t TimeTicks = After.count();
 	uint32_t CTRL = SysTick_CTRL_MCK;
-	Do = [Do]()
+	Do = [Do = std::move(Do)]()
 	{
 		SysTick->CTRL = 0;
 		Do();
@@ -820,7 +820,7 @@ void SystemTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		TimeTicks >>= 3;
 		if (SystemState.OverflowCount = TimeTicks >> 24)
 		{
-			SystemState.Handler = &(SystemState.HandlerA = [Do]()
+			SystemState.Handler = &(SystemState.HandlerA = [Do = std::move(Do)]()
 									{
 				if (!--SystemState.OverflowCount)
 					SystemState.Handler = &Do; });
@@ -833,11 +833,11 @@ void SystemTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		}
 		CTRL = SysTick_CTRL_MCK8;
 	}
-	SystemState.Handler = &(SystemState.HandlerA = Do);
+	SystemState.Handler = &(SystemState.HandlerA = std::move(Do));
 	SysTick->LOAD = TimeTicks;
 	SysTick->CTRL = CTRL;
 }
-void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
+void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> &&Do, uint64_t RepeatTimes, std::function<void()> &&DoneCallback) const
 {
 	if (RepeatTimes)
 	{
@@ -854,7 +854,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_
 				const uint32_t LOAD = TimeTicks;
 				OverflowTarget++;
 				SystemState.OverflowCount = OverflowTarget;
-				SystemState.Handler = &(SystemState.HandlerA = [Do, OverflowTarget, LOAD, DoneCallback]()
+				SystemState.Handler = &(SystemState.HandlerA = [Do = std::move(Do), OverflowTarget, LOAD, DoneCallback = std::move(DoneCallback)]()
 										{
 					switch (--SystemState.OverflowCount)
 					{
@@ -882,7 +882,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_
 			}
 			CTRL = SysTick_CTRL_MCK8;
 		}
-		SystemState.Handler = &(SystemState.HandlerA = [Do, DoneCallback]()
+		SystemState.Handler = &(SystemState.HandlerA = [Do = std::move(Do), DoneCallback = std::move(DoneCallback)]()
 								{
 			if (!--SystemState.RepeatLeft)
 				SysTick->CTRL = 0;
@@ -895,7 +895,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_
 	else
 		DoneCallback();
 }
-void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
+void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> &&DoA, Tick AfterB, std::function<void()> &&DoB, uint64_t NumHalfPeriods, std::function<void()> &&DoneCallback) const
 {
 	if (NumHalfPeriods)
 	{
@@ -921,7 +921,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 					if (OverflowTargetB)
 					{
 						OverflowTargetB++;
-						SystemState.HandlerA = [TicksLeftB, OverflowTargetB, DoA, DoneCallback]()
+						SystemState.HandlerA = [TicksLeftB, OverflowTargetB, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 						{
 							switch (--SystemState.OverflowCount)
 							{
@@ -942,7 +942,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						SystemState.HandlerB = [TicksLeftA, OverflowTargetA, DoB, DoneCallback]()
+						SystemState.HandlerB = [TicksLeftA, OverflowTargetA, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 						{
 							switch (--SystemState.OverflowCount)
 							{
@@ -966,7 +966,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 					}
 					else
 					{
-						SystemState.HandlerA = [TicksLeftB, TicksLeftA, DoA, DoneCallback]()
+						SystemState.HandlerA = [TicksLeftB, TicksLeftA, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 						{
 							switch (--SystemState.OverflowCount)
 							{
@@ -986,7 +986,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						SystemState.HandlerB = [OverflowTargetA, DoB, DoneCallback]()
+						SystemState.HandlerB = [OverflowTargetA, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 						{
 							if (--SystemState.RepeatLeft)
 							{
@@ -1004,7 +1004,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 				}
 				else
 				{
-					SystemState.HandlerA = [OverflowTargetB, DoA, DoneCallback]()
+					SystemState.HandlerA = [OverflowTargetB, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 					{
 						if (--SystemState.RepeatLeft)
 						{
@@ -1018,7 +1018,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 						if (!SystemState.RepeatLeft)
 							DoneCallback();
 					};
-					SystemState.HandlerB = [TicksLeftA, TicksLeftB, DoB, DoneCallback]()
+					SystemState.HandlerB = [TicksLeftA, TicksLeftB, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 					{
 						switch (--SystemState.OverflowCount)
 						{
@@ -1051,7 +1051,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 		}
 		const uint32_t TicksLeftA = TimeTicksA;
 		const uint32_t TicksLeftB = TimeTicksB;
-		SystemState.Handler = &(SystemState.HandlerA = [TicksLeftA, DoA, DoneCallback]()
+		SystemState.Handler = &(SystemState.HandlerA = [TicksLeftA, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 								{
 				if (--SystemState.RepeatLeft)
 				{
@@ -1063,7 +1063,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick
 				DoA();
 				if (!SystemState.RepeatLeft)
 					DoneCallback(); });
-		SystemState.HandlerB = [TicksLeftB, DoB, DoneCallback]()
+		SystemState.HandlerB = [TicksLeftB, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 		{
 			if (--SystemState.RepeatLeft)
 			{
@@ -1201,10 +1201,10 @@ void RealTimerClass::Delay(Tick Time) const
 	while (OverflowCount)
 		;
 }
-void RealTimerClass::DoAfter(Tick After, std::function<void()> Do) const
+void RealTimerClass::DoAfter(Tick After, std::function<void()> &&Do) const
 {
 	RTT->RTT_MR = 0;
-	Do = [Do]()
+	Do = [Do = std::move(Do)]()
 	{
 		RealState.Handler = nullptr;
 		RTT->RTT_MR = 0;
@@ -1219,7 +1219,7 @@ void RealTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		if (RealState.OverflowCount = RTPRES >> 16)
 		{
 			RTT->RTT_AR = TimerTicks >> 16;
-			RealState.Handler = &(RealState.HandlerA = [Do]()
+			RealState.Handler = &(RealState.HandlerA = [Do = std::move(Do)]()
 								  {
 				if (!--RealState.OverflowCount)
 					Do(); });
@@ -1237,9 +1237,9 @@ void RealTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		RTT->RTT_AR = TimerTicks;
 		RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 	}
-	RealState.Handler = &(RealState.HandlerA = Do);
+	RealState.Handler = &(RealState.HandlerA = std::move(Do));
 }
-void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
+void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> &&Do, uint64_t RepeatTimes, std::function<void()> &&DoneCallback) const
 {
 	if (RepeatTimes)
 	{
@@ -1252,7 +1252,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 				const uint32_t RTT_AR = TimerTicks >> 16;
 				RTT->RTT_AR = RTT_AR;
 				RealState.OverflowCount = ++OverflowTarget;
-				RealState.Handler = &(RealState.HandlerA = [Do, RTT_AR, OverflowTarget, DoneCallback]()
+				RealState.Handler = &(RealState.HandlerA = [Do = std::move(Do), RTT_AR, OverflowTarget, DoneCallback = std::move(DoneCallback)]()
 									  {
 					if (!--RealState.OverflowCount)
 					{
@@ -1277,7 +1277,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 			{
 				RTT->RTT_AR = -1;
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
-				RealState.Handler = &(RealState.HandlerA = [Do, DoneCallback]()
+				RealState.Handler = &(RealState.HandlerA = [Do = std::move(Do), DoneCallback = std::move(DoneCallback)]()
 									  {
 					if (!--RealState.RepeatLeft)
 					{
@@ -1293,7 +1293,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 		{
 			const uint32_t RTT_AR = TimerTicks;
 			RTT->RTT_AR = RTT_AR;
-			RealState.Handler = &(RealState.HandlerA = [Do, DoneCallback, RTT_AR]()
+			RealState.Handler = &(RealState.HandlerA = [Do = std::move(Do), DoneCallback = std::move(DoneCallback), RTT_AR]()
 								  {
 				if (--RealState.RepeatLeft)
 					RTT->RTT_AR += RTT_AR;
@@ -1315,7 +1315,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t 
 	else
 		DoneCallback();
 }
-void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick AfterB, std::function<void()> DoB, uint64_t NumHalfPeriods, std::function<void()> DoneCallback) const
+void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> &&DoA, Tick AfterB, std::function<void()> &&DoB, uint64_t NumHalfPeriods, std::function<void()> &&DoneCallback) const
 {
 	if (NumHalfPeriods)
 	{
@@ -1342,7 +1342,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 				RealState.OverflowCount = OverflowTargetA;
 				const uint16_t OverflowTargetB = (TimerTicksB >> 48) + 1;
 				RTT_AR_B = TimerTicksB >> 16;
-				RealState.Handler = &(RealState.HandlerA = [OverflowTargetB, RTT_AR_B, DoA, DoneCallback]()
+				RealState.Handler = &(RealState.HandlerA = [OverflowTargetB, RTT_AR_B, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 									  {
 					if (!--RealState.OverflowCount)
 					{
@@ -1361,7 +1361,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 						if (!RealState.RepeatLeft)
 							DoneCallback();
 					} });
-				RealState.HandlerB = [OverflowTargetA, RTT_AR_A, DoB, DoneCallback]()
+				RealState.HandlerB = [OverflowTargetA, RTT_AR_A, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 				{
 					if (!--RealState.OverflowCount)
 					{
@@ -1395,7 +1395,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 			RTT_AR_B = TimerTicksB;
 		}
 		RTT->RTT_AR = RTT_AR_A;
-		RealState.Handler = &(RealState.HandlerA = [RTT_AR_B, DoA, DoneCallback]()
+		RealState.Handler = &(RealState.HandlerA = [RTT_AR_B, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
 							  {
 			if (--RealState.RepeatLeft)
 			{
@@ -1410,7 +1410,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::function<void()> DoA, Tick A
 			DoA();
 			if (!RealState.RepeatLeft)
 				DoneCallback(); });
-		RealState.HandlerB = [RTT_AR_A, DoB, DoneCallback]()
+		RealState.HandlerB = [RTT_AR_A, DoB = std::move(DoB), DoneCallback = std::move(DoneCallback)]()
 		{
 			if (--RealState.RepeatLeft)
 			{
@@ -1575,7 +1575,7 @@ void PeripheralTimerClass::Delay(Tick Time) const
 		;
 	return;
 }
-void PeripheralTimerClass::DoAfter(Tick After, std::function<void()> Do) const
+void PeripheralTimerClass::DoAfter(Tick After, std::function<void()>&& Do) const
 {
 	Channel.TC_IDR = -1;
 	Initialize();
@@ -1596,7 +1596,7 @@ void PeripheralTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		if (_State.OverflowCount = SlowTicks >> 32)
 		{
 			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
-			_State.Handler = &(_State.HandlerA = [this, Do]
+			_State.Handler = &(_State.HandlerA = [this, Do = std::move(Do)]
 							   {
 				// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
 				if (!--_State.OverflowCount)
@@ -1607,10 +1607,10 @@ void PeripheralTimerClass::DoAfter(Tick After, std::function<void()> Do) const
 		}
 	}
 	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS | TC_CMR_WAVE | TCCLKS;
-	_State.Handler = &(_State.HandlerA = Do);
+	_State.Handler = &(_State.HandlerA = std::move(Do));
 	Channel.TC_IER = TC_IER_CPCS;
 }
-void PeripheralTimerClass::RepeatEvery(Tick Every, std::function<void()> Do, uint64_t RepeatTimes, std::function<void()> DoneCallback) const
+void PeripheralTimerClass::RepeatEvery(Tick Every, std::function<void()>&& Do, uint64_t RepeatTimes, std::function<void()>&& DoneCallback) const
 {
 	switch (RepeatTimes)
 	{
