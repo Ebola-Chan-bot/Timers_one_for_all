@@ -77,8 +77,6 @@ namespace Timers_one_for_all {
 		}
 		constexpr _RuntimeReference(size_t Value) : Value(Value) {}
 		const size_t Value;
-
-	protected:
 	};
 #endif
 	struct TimerClass {
