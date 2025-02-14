@@ -45,8 +45,14 @@ using namespace Timers_one_for_all;
 ### TOFA_SYSTIMER
 `SystemTimer`，系统计时器，具有24位计数和84㎒精度。但是，此计时器为一些内置函数如`millis();delay();micros();`等依赖，使用系统计时器后再调用这些内置函数将产生未定义行为。一般应避免使用系统计时器。
 # 使用入门
-通过宏定义指定要使用的硬件计时器后，如果不关心具体哪个任务使用哪个计时器，可以使用自动分配，获取一个通用的`TimerClass`指针（或具有自动释放功能的等效`unique_ptr`），而无需关心硬件实现细节：
+通过宏定义指定要使用的硬件计时器后，如果不关心具体哪个任务使用哪个计时器，可以使用自动分配，获取一个通用的`TimerClass`指针（或具有自动释放功能的等效`std::unique_ptr`），而无需关心硬件实现细节：
 ```C++
+// 可用的计时器个数
+constexpr uint8_t NumTimers = (uint8_t)TimerEnum::_NumTimers;
+// 计时器的最小精度单位
+using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
+// 使用此常数表示无限重复，直到手动停止
+constexpr uint64_t InfiniteRepeat = -1;
 // 分配一个接受自动分配的计时器。如果没有这样的计时器，返回nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。被此方法分配返回的计时器将不再接受自动分配，需要手动设置Allocatable才能使其重新接受自动分配。
 TimerClass const* AllocateTimer();
 // 分配一个接受自动分配的计时器unique_ptr。如果没有这样的计时器，返回指针值为nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。此unique_ptr析构前计时器将不再接受自动分配。
@@ -90,7 +96,7 @@ void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T After
 template <typename T>
 void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr) const;
 ```
-注意，所有输入的move_only_function对象都会被移动构造而转移所有权，原对象将失效。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当将资源的引用而非所有权交给move_only_function。
+所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。所有输入的`std::move_only_function<void()const>&&`都会被移动构造而转移所有权，原对象将失效。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。
 
 任务结束后，一般应当释放计时器，使其再次接受自动分配。但若使用unique_ptr则可以借助RAII机制自动释放计时器，而无需手动管理。
 ```C++
