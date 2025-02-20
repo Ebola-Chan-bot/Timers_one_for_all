@@ -3,7 +3,7 @@
 音响、方波、延迟任务、定时重复，这些任务都需要应用开发板上的计时器才能完成。有时你甚至需要多个计时器同步运行，实现多线程任务。但是，当前Arduino社区并没有提供比较完善的计时器运行库。它们能够执行的任务模式非常有限，而且用户无法指定具体要使用哪个计时器。其结果就是，经常有一些使用计时器的库发生冲突，或者和用户自己的应用发生冲突。本项目旨在将计时器可能需要使用的所有功能在所有计时器上实现，最关键的是允许用户手动指定要使用的硬件计时器，避免冲突。
 
 # 硬件计时器
-为了避免任何冲突，本库默认不会占用任何计时器，因而也无法使用。用户需要在包含头文件前通过宏定义指定要使用的硬件计时器。例如：
+为了避免任何冲突，本库默认不会占用任何计时器，因而也无法使用。你需要在包含头文件前通过宏定义指定要使用的硬件计时器。如果你的项目只有一个翻译单元，可以直接按如下写法，根据实际需求注释或取消注释对应的计时器宏：
 ```C++
 //AVR和SAM架构都支持的计时器
 //#define TOFA_TIMER0
@@ -22,10 +22,13 @@
 //#define TOFA_SYSTIMER
 #endif
 
-#include <Timers_one_for_all.hpp>
+#include <TimersOneForAll_Declare.hpp>
+#include <TimersOneForAll_Define.hpp>
 using namespace Timers_one_for_all;
 ```
 用户应当查询Arduino标准库文档和任何其它第三方库文档，确认那些库占用了哪些计时器。不要定义那些被占用的计时器宏，这样本库就不会使用那些计时器，也就不会和那些库发生冲突。
+
+另外，对于有多个翻译单元的项目，需要注意遵守单一定义规则，参阅[跨翻译单元链接与单一定义规则](#跨翻译单元链接与单一定义规则)。
 ## ARDUINO_ARCH_AVR
 此架构编译器必须启用C++17。打开“%LOCALAPPDATA%\Arduino15\packages\arduino\hardware\avr\<版本号>\platform.txt”并将参数“-std=gnu++11”更改为-std=gnu++17。此架构最多支持0~5共6个计时器。
 ### TOFA_TIMER0
@@ -96,17 +99,37 @@ void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T After
 template <typename T>
 void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr) const;
 ```
-所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。所有输入的`std::move_only_function<void()const>&&`都会被移动构造而转移所有权，原对象将失效。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。
+所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。不同的特化类型可以用`std::chrono_duration_cast`相互转换。
+
+绝大多数简单应用场景下，所有的`std::move_only_function<void()const>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()const>&&`将会被移动构造而转移所有权，原对象将失效。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。
 
 任务结束后，一般应当释放计时器，使其再次接受自动分配。但若使用unique_ptr则可以借助RAII机制自动释放计时器，而无需手动管理。
 ```C++
 TimerClass const* Timer = AllocateTimer();
 Timer->Delay(std::chrono::seconds(3));
+
+//使用完毕后用Allocatable(true)释放计时器
 Timer->Allocatable(true);
+
+//如果使用unique_ptr，则可以自动释放：
 {
 	std::unique_ptr<TimerClass const, void (*)(TimerClass const*)> TimerUnique = AllocateTimerUnique();
 	TimerUnique->Delay(std::chrono::seconds(3));
 	//TimerUnique析构时自动释放计时器
 }
 ```
-如果有些计时器需要自定义的分配方法，也可以使用Allocatable(false)禁止自动分配。
+如果你想用自定义的策略调度某些计时器，也可以使用Allocatable(false)禁止那些计时器参与自动分配。
+# 跨翻译单元链接与单一定义规则
+本库包含两个头文件，一个Declare头`TimersOneForAll_Declare.hpp`，一个Define头`TimersOneForAll_Define.hpp`。如果你的项目只有一个翻译单元，则只需依次定义硬件计时器宏、包含Declare头、包含Define头即可。但是，如果你的项目包含多个翻译单元，需要特别小心遵守单一定义规则。这是因为`TimersOneForAll_Define.hpp`中包含非内联的函数和变量定义，C++语言标准不允许这样的定义被包含在多个翻译单元中。此外，Define头依赖Declare头，因此Define头的包含必须在Declare头之后。
+
+换句话说，对于具有多个翻译单元的项目：
+- 所有使用了本库功能的翻译单元，必须均包含完全相同的硬件计时器宏定义和Declare头
+- 在包含了Declare头的所有翻译单元中，必须有且仅有唯一一个单元还包含Define头
+
+在每个翻译单元中重复包含相同的硬件计时器宏定义可能会显得繁琐。所以推荐的做法是，创建一个专门的头文件包含硬件计时器宏定义和Declare头，然后在所有使用了本库功能的翻译单元中包含这个专门的头文件，然后任选其中一个翻译单元再额外包含Define头。具体写法可以参考MultiTU示例项目。
+
+这个设计可能相比于一般的库来说显得繁琐，但这是Arduino（而非作者）的计时器中断系统设计使然。Arduino为每个计时器规定了一个具有特定名称的非内联的中断处理函数，根据单一定义规则，这些函数只能在一个翻译单元中定义。Arduino为实现一些内置函数，已经预先占用了一些定义，但使用了GCC的弱符号扩展功能，以允许用户或第三方的定义将其覆盖掉——但也只能覆盖一次，本库无法再次定义弱符号，否则编译器不知道该选哪个。当用户除了本库之外还使用了其它直接使用计时器的库时，就会出现中断处理函数的多重定义问题。
+
+为了适应各种可能的计时器争用环境，唯一的解决方法就是由用户通过宏定义来指明本库应当定义哪些中断处理函数。由于这些定义无法事先确定，因此也只能存在于用户提供的翻译单元中，那么单一定义规则的处理也只能由用户来负责。即由用户负责提供一个翻译单元来存放唯一一次中断函数定义，而其它翻译单元通过Declare头来引用它们。
+
+而从本库往上，调用本库的上层结构是在运行时动态地提供可调用对象，因此不会出现定义冲突，所有调用本库的代码都可以共享所有硬件计时器。如果你是库开发者，建议调用本库实现计时相关功能，而不要直接定义最底层的中断处理函数。

@@ -1,9 +1,7 @@
 #pragma once
 #include <Cpp_Standard_Library.h>
 #include <chrono>
-#include <functional>
 #include <memory>
-#include <Arduino.h>
 namespace Timers_one_for_all {
 	// 枚举可用的计时器
 	enum class TimerEnum {

@@ -2,7 +2,9 @@
 #include <Quick_digital_IO_interrupt.hpp>
 
 // 上传该示例之前，请在7号口连接一个LED灯，8号口连接一个无源蜂鸣器的IO端口
-#include <Timers_one_for_all.hpp>
+
+//使用一个单独的头文件定义要使用的计时器宏
+#include "Timers_one_for_all.hpp"
 
 using namespace Timers_one_for_all;
 using namespace std::chrono_literals;
@@ -64,3 +66,6 @@ void loop() {
   //等待，观察。在此期间应当看到，LED以亮2s、暗1s的周期闪烁10秒，然后卡在亮状态暂停10秒，然后继续闪烁10秒，最后彻底停止。
   //Serial.println(SysTick->VAL);
 }
+
+//在不多不少正好一个翻译单元中包含定义头文件
+#include <TimersOneForAll_Define.hpp>
