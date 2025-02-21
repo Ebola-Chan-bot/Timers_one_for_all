@@ -1,11 +1,12 @@
-#include <Timers_one_for_all.hpp>
-// 上传前在8号引脚连接LED灯
-#include <Low_level_quick_digital_IO.hpp>
+//使用一个单独的头文件声明要使用的计时器宏
+#include "Timers_one_for_all.hpp"
+
 constexpr uint8_t LED = 8;
 using namespace Timers_one_for_all;
 void Toggle(const TimerClass* LEDTimer) {
   //递归实现无限闪烁
-  Low_level_quick_digital_IO::DigitalToggle<LED>();
+  static uint8_t State = LOW;
+  digitalWrite(LED, State = 1 - State);
   LEDTimer->DoAfter(std::chrono::milliseconds(random(2000)), [LEDTimer]() {
     Toggle(LEDTimer);
   });
@@ -19,3 +20,6 @@ void setup() {
 void loop() {
   //等待，查看闪烁效果
 }
+
+//在不多不少正好一个翻译单元中包含定义头文件
+#include <TimersOneForAll_Define.hpp>

@@ -3,7 +3,7 @@
 
 // 上传该示例之前，请在7号口连接一个LED灯，8号口连接一个无源蜂鸣器的IO端口
 
-//使用一个单独的头文件定义要使用的计时器宏
+//使用一个单独的头文件声明要使用的计时器宏
 #include "Timers_one_for_all.hpp"
 
 using namespace Timers_one_for_all;
