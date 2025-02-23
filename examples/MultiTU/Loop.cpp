@@ -1,9 +1,9 @@
 //在其它翻译单元中只声明，不定义
 #include "Timers_one_for_all.hpp"
+#include <iostream>
 
 extern Timers_one_for_all::TimerClass const *Timer;
-#include <iostream>
-void loop() {
+void loop2() {
 	std::cout << "输入任意字符，按Enter显示已经运行了几秒：";
 	std::cin.get();
 	std::cin.ignore((std::numeric_limits<std::streamsize>::max)(), '\n');
