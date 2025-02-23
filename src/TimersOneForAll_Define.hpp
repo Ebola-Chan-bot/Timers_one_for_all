@@ -77,7 +77,7 @@ namespace Timers_one_for_all
 	_TimerState _TimerStates[NumTimers];
 }
 #ifdef TOFA_TIMER0
-#warning 使用计时器0可能导致内置 micros millis delay 等时间相关函数工作异常。如果不需要使用这些内置函数，可以忽略此警告；否则考虑取消宏定义TOFA_TIMER0
+#warning "使用计时器0可能导致内置 micros millis delay 等时间相关函数工作异常。如果不需要使用这些内置函数，可以忽略此警告；否则考虑取消宏定义TOFA_TIMER0"
 ISR(TIMER0_COMPA_vect)
 {
 	(*Timers_one_for_all::_TimerStates[(size_t)Timers_one_for_all::TimerEnum::Timer0].COMPA)();
@@ -104,7 +104,7 @@ ISR(TIMER0_COMPB_vect)
 _TOFA_TimerIsr(1);
 #endif
 #ifdef TOFA_TIMER2
-#warning 使用计时器2可能导致内置tone等音调相关函数工作异常。如果不需要使用这些内置函数，可以忽略此警告；否则考虑取消宏定义TOFA_TIMER2
+#warning "使用计时器2可能导致内置tone等音调相关函数工作异常。如果不需要使用这些内置函数，可以忽略此警告；否则考虑取消宏定义TOFA_TIMER2"
 _TOFA_TimerIsr(2);
 #endif
 #ifdef TOFA_TIMER3
