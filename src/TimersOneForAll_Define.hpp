@@ -36,19 +36,19 @@ namespace Timers_one_for_all
 	{
 		using type = _U8Sequence<>;
 	};
-	// 输入预分频器应排除起始0
-	template <typename T, uint8_t BitIndex = 0, uint8_t PrescalerIndex = 1>
+	// 输入预分频器应排除1号的不0右移分频器。TrailingZeros表示周期数的log2向下取整，因此0时已经超过一周期，需要从2号开始
+	template <typename T, uint8_t TrailingZeros = 0, uint8_t PrescalerIndex = 2>
 	struct _BitLimit
 	{
-		using type = typename _U8SequencePrepend<PrescalerIndex, typename _BitLimit<T, BitIndex + 1, PrescalerIndex>::type>::type;
+		using type = typename _U8SequencePrepend<PrescalerIndex, typename _BitLimit<T, TrailingZeros + 1, PrescalerIndex>::type>::type;
 	};
-	template <uint8_t BitIndex, uint8_t PrescalerIndex, uint8_t... Rest>
-	struct _BitLimit<_U8Sequence<BitIndex + 1, Rest...>, BitIndex, PrescalerIndex>
+	template <uint8_t TrailingZeros, uint8_t PrescalerIndex, uint8_t... Rest>
+	struct _BitLimit<_U8Sequence<TrailingZeros + 1, Rest...>, TrailingZeros, PrescalerIndex>
 	{
-		using type = typename _U8SequencePrepend<PrescalerIndex, typename _BitLimit<_U8Sequence<Rest...>, BitIndex + 1, PrescalerIndex + 1>::type>::type;
+		using type = typename _U8SequencePrepend<PrescalerIndex, typename _BitLimit<_U8Sequence<Rest...>, TrailingZeros + 1, PrescalerIndex + 1>::type>::type;
 	};
-	template <uint8_t BitIndex, uint8_t PrescalerIndex>
-	struct _BitLimit<_U8Sequence<BitIndex + 1>, BitIndex, PrescalerIndex>
+	template <uint8_t TrailingZeros, uint8_t PrescalerIndex>
+	struct _BitLimit<_U8Sequence<TrailingZeros + 1>, TrailingZeros, PrescalerIndex>
 	{
 		using type = _U8Sequence<PrescalerIndex>;
 	};
@@ -140,6 +140,7 @@ namespace Timers_one_for_all
 		}
 		else
 		{
+			//如果Cycles大于0，表示超过一周期需要预分频，计算Cycles的log2向下取整以转换为预分频器编号。预分频器编号从1开始，而1号不分频，所以只有Cycles为0的情况取1，其它情况至少是2
 			Clock = Cycles ? Prescaler::BitsToPrescaler[sizeof(_FirstArgumentType_t<decltype(__builtin_clz)>) * 8 - 1 - __builtin_clz(Cycles)] : 1;
 			return 0;
 		}

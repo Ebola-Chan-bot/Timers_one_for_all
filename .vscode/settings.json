@@ -75,6 +75,7 @@
 		"dynarray": "cpp",
 		"system_error": "cpp",
 		"bit": "cpp",
-		"concepts": "cpp"
+		"concepts": "cpp",
+		"string_view": "cpp"
 	}
 }
