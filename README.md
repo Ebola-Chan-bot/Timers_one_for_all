@@ -25,6 +25,7 @@
 #include <TimersOneForAll_Declare.hpp>
 #include <TimersOneForAll_Define.hpp>
 using namespace Timers_one_for_all;
+using namespace std::chrono_literals;
 ```
 用户应当查询Arduino标准库文档和任何其它第三方库文档，确认那些库占用了哪些计时器。不要定义那些被占用的计时器宏，这样本库就不会使用那些计时器，也就不会和那些库发生冲突。
 
@@ -99,14 +100,27 @@ void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T After
 template <typename T>
 void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr) const;
 ```
-所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。不同的特化类型可以用`std::chrono_duration_cast`相互转换。
+所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。不同的特化类型可以用`std::chrono_duration_cast`相互转换。建议`using namespace std::chrono_literals`以使用更优雅的`duration`字面量。
 
-绝大多数简单应用场景下，所有的`std::move_only_function<void()const>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()const>&&`将会被移动构造而转移所有权，原对象将失效。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。
+绝大多数简单应用场景下，所有的`std::move_only_function<void()const>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()const>&&`将会被移动构造而转移所有权，原对象将处于未指明状态。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。此外需注意，如果输入的可调用对象在调用时会更改本计时器绑定的可调用对象，这意味着该对象的行为会析构对象自身，则此析构行为之后不得再访问对象自身的资源，因为可能已经被释放。例如：
+```C++
+TimerClass const *Timer = AllocateTimer();
+uint8_t a = 0;
+Timer->DoAfter(1s, [&a, Timer]()
+			   {
+					Timer->DoAfter(1s, []() {});
+					// 这一步操作之后，本λ表达式将被新任务覆盖而析构，捕获的a引用和Timer变量都已经被释放，不可再使用
+
+					a += 1;
+					// 错误用法！此引用已经被释放，再次使用导致未定义行为
+			   });
+```
+上述代码不是100%会出错，但在特定条件下将成为难以排查的bug来源。建议的做法是始终将覆盖本计时器任务作为函数返回前的最后一步操作。
 
 任务结束后，一般应当释放计时器，使其再次接受自动分配。但若使用unique_ptr则可以借助RAII机制自动释放计时器，而无需手动管理。
 ```C++
 TimerClass const* Timer = AllocateTimer();
-Timer->Delay(std::chrono::seconds(3));
+Timer->Delay(3s);
 
 //使用完毕后用Allocatable(true)释放计时器
 Timer->Allocatable(true);
@@ -114,7 +128,7 @@ Timer->Allocatable(true);
 //如果使用unique_ptr，则可以自动释放：
 {
 	std::unique_ptr<TimerClass const, void (*)(TimerClass const*)> TimerUnique = AllocateTimerUnique();
-	TimerUnique->Delay(std::chrono::seconds(3));
+	TimerUnique->Delay(3s);
 	//TimerUnique析构时自动释放计时器
 }
 ```

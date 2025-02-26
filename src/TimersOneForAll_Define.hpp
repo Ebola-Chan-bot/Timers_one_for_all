@@ -1,3 +1,7 @@
+#pragma once
+#ifdef _TOFA_DEBUG
+#include "TimersOneForAll_Declare.hpp"
+#endif
 Timers_one_for_all::TimerClass const *Timers_one_for_all::AllocateTimer()
 {
 	for (int8_t T = NumTimers - 1; T >= 0; --T)
@@ -140,7 +144,7 @@ namespace Timers_one_for_all
 		}
 		else
 		{
-			//如果Cycles大于0，表示超过一周期需要预分频，计算Cycles的log2向下取整以转换为预分频器编号。预分频器编号从1开始，而1号不分频，所以只有Cycles为0的情况取1，其它情况至少是2
+			// 如果Cycles大于0，表示超过一周期需要预分频，计算Cycles的log2向下取整以转换为预分频器编号。预分频器编号从1开始，而1号不分频，所以只有Cycles为0的情况取1，其它情况至少是2
 			Clock = Cycles ? Prescaler::BitsToPrescaler[sizeof(_FirstArgumentType_t<decltype(__builtin_clz)>) * 8 - 1 - __builtin_clz(Cycles)] : 1;
 			return 0;
 		}
@@ -157,7 +161,6 @@ namespace Timers_one_for_all
 	void TimerClass0::StartTiming() const
 	{
 		TIMSK0 = 1 << TOIE0;
-		TCNT0 = 0;
 		TCCR0B = 1;
 		TCCR0A = 0;
 		_State.OverflowCountA = 0;
@@ -171,6 +174,7 @@ namespace Timers_one_for_all
 		_State.HandlerB = [&OverflowCount = _State.OverflowCountA]()
 		{ OverflowCount++; };
 		OCR0A = 0;
+		TCNT0 = 0;
 		TIFR0 = -1;
 		TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 	}
@@ -182,7 +186,6 @@ namespace Timers_one_for_all
 	void TimerClass0::Delay(Tick Time) const
 	{
 		TIMSK0 = 1 << TOIE0;
-		TCNT0 = 0;
 		volatile uint32_t OverflowCount = _PrescalerOverflow<_Prescaler01>(Time.count() >> 8, TCCR0B) + 1;
 		TCCR0A = 0; // 必须先确保TCCRA低2位全0，否则OCRA会受到限制
 		OCR0A = Time.count() >> _Prescaler01::BitShifts[TCCR0B];
@@ -191,6 +194,7 @@ namespace Timers_one_for_all
 							 if (!--OverflowCount)
 								 TIMSK0 = 1 << TOIE0; // 由中断负责停止计时器，避免OverflowCount下溢
 						 });
+		TCNT0 = 0;
 		TIFR0 = -1;
 		TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
 		while (OverflowCount)
@@ -199,7 +203,6 @@ namespace Timers_one_for_all
 	void TimerClass0::DoAfter(Tick After, std::move_only_function<void() const> &&Do) const
 	{
 		TIMSK0 = 1 << TOIE0;
-		TCNT0 = 0;
 		_State.OverflowCountA = _PrescalerOverflow<_Prescaler01>(After.count() >> 8, TCCR0B) + 1;
 		TCCR0A = 0;
 		OCR0A = After.count() >> _Prescaler01::BitShifts[TCCR0B];
@@ -209,6 +212,7 @@ namespace Timers_one_for_all
 			TIMSK0 = 1 << TOIE0;
 			Do();
 		} });
+		TCNT0 = 0;
 		TIFR0 = -1;
 		TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
 	}
@@ -217,7 +221,6 @@ namespace Timers_one_for_all
 		if (RepeatTimes)
 		{
 			TIMSK0 = 1 << TOIE0;
-			TCNT0 = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(Every.count() >> 8, TCCR0B))
 			{
 				// 在有溢出情况下，CTC需要多用一个中断且逻辑更复杂，毫无必要，直接用加法更简明
@@ -253,8 +256,9 @@ namespace Timers_one_for_all
 				if (!RepeatLeft)
 					DoneCallback(); });
 			}
-			TIFR0 = -1;
 			_State.RepeatLeft = RepeatTimes;
+			TCNT0 = 0;
+			TIFR0 = -1;
 			TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 		}
 		else
@@ -266,7 +270,6 @@ namespace Timers_one_for_all
 		{
 			TIMSK0 = 1 << TOIE0;
 			AfterB += AfterA;
-			TCNT0 = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(AfterB.count() >> 8, TCCR0B))
 			{
 				TCCR0A = 0;
@@ -325,6 +328,7 @@ namespace Timers_one_for_all
 					DoneCallback(); });
 			}
 			_State.RepeatLeft = NumHalfPeriods;
+			TCNT0 = 0;
 			TIFR0 = -1;
 			TIMSK0 = (1 << OCIE0A) | (1 << OCIE0B) | (1 << TOIE0);
 		}
@@ -344,7 +348,6 @@ namespace Timers_one_for_all
 	void TimerClass1::StartTiming() const
 	{
 		TIMSK = 0;
-		TCNT = 0;
 		TCCRB = 1;
 		TCCRA = 0;
 		_State.OverflowCountA = 0;
@@ -357,6 +360,7 @@ namespace Timers_one_for_all
 		} });
 		_State.HandlerB = [&OverflowCount = _State.OverflowCountA]()
 		{ OverflowCount++; };
+		TCNT = 0;
 		TIFR = -1;
 		TIMSK = 1 << TOIE1;
 	}
@@ -368,7 +372,6 @@ namespace Timers_one_for_all
 	void TimerClass1::Delay(Tick Time) const
 	{
 		TIMSK = 0;
-		TCNT = 0;
 		volatile uint32_t OverflowCount = _PrescalerOverflow<_Prescaler01>(Time.count() >> 16, TCCRB) + 1;
 		TCCRA = 0;
 		OCRA = Time.count() >> _Prescaler01::BitShifts[TCCRB];
@@ -376,6 +379,7 @@ namespace Timers_one_for_all
 						 {
 		if (!--OverflowCount)
 			TIMSK = 0; });
+		TCNT = 0;
 		TIFR = -1;
 		TIMSK = 1 << OCIE1A;
 		while (OverflowCount)
@@ -384,7 +388,6 @@ namespace Timers_one_for_all
 	void TimerClass1::DoAfter(Tick After, std::move_only_function<void() const> &&Do) const
 	{
 		TIMSK = 0;
-		TCNT = 0;
 		_State.OverflowCountA = _PrescalerOverflow<_Prescaler01>(After.count() >> 16, TCCRB) + 1;
 		TCCRA = 0;
 		OCRA = After.count() >> _Prescaler01::BitShifts[TCCRB];
@@ -394,6 +397,7 @@ namespace Timers_one_for_all
 			TIMSK = 0;
 			Do();
 		} });
+		TCNT = 0;
 		TIFR = -1;
 		TIMSK = 1 << OCIE1A;
 	}
@@ -402,7 +406,6 @@ namespace Timers_one_for_all
 		if (RepeatTimes)
 		{
 			TIMSK = 0;
-			TCNT = 0;
 			TCCRA = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(Every.count() >> 16, TCCRB))
 			{
@@ -437,8 +440,9 @@ namespace Timers_one_for_all
 					DoneCallback(); });
 				TCCRB |= 1 << WGM12;
 			}
-			TIFR = -1;
 			_State.RepeatLeft = RepeatTimes;
+			TCNT = 0;
+			TIFR = -1;
 			TIMSK = 1 << OCIE1A;
 		}
 		else
@@ -450,7 +454,6 @@ namespace Timers_one_for_all
 		{
 			TIMSK = 0;
 			AfterB += AfterA;
-			TCNT = 0;
 			TCCRA = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(AfterB.count() >> 16, TCCRB))
 			{
@@ -509,6 +512,7 @@ namespace Timers_one_for_all
 				TCCRB |= 1 << WGM12;
 			}
 			_State.RepeatLeft = NumHalfPeriods;
+			TCNT = 0;
 			TIFR = -1;
 			TIMSK = (1 << OCIE1A) | (1 << OCIE1B);
 		}
@@ -528,7 +532,6 @@ namespace Timers_one_for_all
 	void TimerClass2::StartTiming() const
 	{
 		TIMSK2 = 0;
-		TCNT2 = 0;
 		TCCR2B = 1;
 		TCCR2A = 0;
 		_State.OverflowCountA = 0;
@@ -541,6 +544,7 @@ namespace Timers_one_for_all
 		} });
 		_State.HandlerB = [&OverflowCount = _State.OverflowCountA]()
 		{ OverflowCount++; };
+		TCNT2 = 0;
 		TIFR2 = -1;
 		TIMSK2 = 1 << TOIE1;
 	}
@@ -552,7 +556,6 @@ namespace Timers_one_for_all
 	void TimerClass2::Delay(Tick Time) const
 	{
 		TIMSK2 = 0;
-		TCNT2 = 0;
 		volatile uint32_t OverflowCount = _PrescalerOverflow<_Prescaler2>(Time.count() >> 8, TCCR2B) + 1;
 		TCCR2A = 0;
 		OCR2A = Time.count() >> _Prescaler2::BitShifts[TCCR2B];
@@ -560,6 +563,7 @@ namespace Timers_one_for_all
 						 {
 		if (!--OverflowCount)
 			TIMSK2 = 0; });
+		TCNT2 = 0;
 		TIFR2 = -1;
 		TIMSK2 = 1 << OCIE2A;
 		while (OverflowCount)
@@ -568,7 +572,6 @@ namespace Timers_one_for_all
 	void TimerClass2::DoAfter(Tick After, std::move_only_function<void() const> &&Do) const
 	{
 		TIMSK2 = 0;
-		TCNT2 = 0;
 		_State.OverflowCountA = _PrescalerOverflow<_Prescaler2>(After.count() >> 8, TCCR2B) + 1;
 		TCCR2A = 0;
 		OCR2A = After.count() >> _Prescaler2::BitShifts[TCCR2B];
@@ -578,6 +581,7 @@ namespace Timers_one_for_all
 			TIMSK2 = 0;
 			Do();
 		} });
+		TCNT2 = 0;
 		TIFR2 = -1;
 		TIMSK2 = 1 << OCIE2A;
 	}
@@ -586,7 +590,6 @@ namespace Timers_one_for_all
 		if (RepeatTimes)
 		{
 			TIMSK2 = 0;
-			TCNT2 = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler2>(Every.count() >> 8, TCCR2B))
 			{
 				const uint8_t OcraTarget = Every.count() >> _Prescaler2::MaxShift;
@@ -621,8 +624,9 @@ namespace Timers_one_for_all
 				if (!RepeatLeft)
 					DoneCallback(); });
 			}
-			TIFR2 = -1;
 			_State.RepeatLeft = RepeatTimes;
+			TCNT2 = 0;
+			TIFR2 = -1;
 			TIMSK2 = 1 << OCIE2A;
 		}
 		else
@@ -634,7 +638,6 @@ namespace Timers_one_for_all
 		{
 			TIMSK2 = 0;
 			AfterB += AfterA;
-			TCNT2 = 0;
 			if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler2>(AfterB.count() >> 8, TCCR2B))
 			{
 				TCCR2A = 0;
@@ -693,6 +696,7 @@ namespace Timers_one_for_all
 					DoneCallback(); });
 			}
 			_State.RepeatLeft = NumHalfPeriods;
+			TCNT2 = 0;
 			TIFR2 = -1;
 			TIMSK2 = (1 << OCIE2A) | (1 << OCIE2B);
 		}
@@ -1081,7 +1085,7 @@ namespace Timers_one_for_all
 		_SystemState.Allocatable = A;
 	}
 #endif
-using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数据表说32768，实测明显不准。采用实测值。
+	using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数据表说32768，实测明显不准。采用实测值。
 #ifdef TOFA_REALTIMER
 	static struct _RealTimerState : public _TimerState
 	{
@@ -1127,18 +1131,18 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 		RTT->RTT_MR = 1 | RTT_MR_ALMIEN | RTT_MR_RTTRST;
 		_RealState.OverflowCount = 0;
 		_RealState.Handler = &(_RealState.HandlerA = []()
-							  {
-								  if (++_RealState.OverflowCount == 2)
-								  {
-									  const uint16_t RTPRES = RTT->RTT_MR << 1;
-									  RTT->RTT_MR = RTPRES | RTT_MR_ALMIEN;
-									  // 可能存在问题：MR的修改可能在RTTRST之前不会生效
-									  _RealState.OverflowCount = 1;
-									  if (!RTPRES)
-										  _RealState.Handler = &_RealState.HandlerB;
-								  }
-								  // 可能存在问题：中断寄存器尚未清空导致中断再次触发
-							  });
+							   {
+								   if (++_RealState.OverflowCount == 2)
+								   {
+									   const uint16_t RTPRES = RTT->RTT_MR << 1;
+									   RTT->RTT_MR = RTPRES | RTT_MR_ALMIEN;
+									   // 可能存在问题：MR的修改可能在RTTRST之前不会生效
+									   _RealState.OverflowCount = 1;
+									   if (!RTPRES)
+										   _RealState.Handler = &_RealState.HandlerB;
+								   }
+								   // 可能存在问题：中断寄存器尚未清空导致中断再次触发
+							   });
 		_RealState.HandlerB = []()
 		{ _RealState.OverflowCount++; };
 		while (RTT->RTT_SR)
@@ -1178,7 +1182,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 		}
 		_RealState.Handler = &(_RealState.HandlerA = [&OverflowCount]()
-							  {
+							   {
 		if (!--OverflowCount) {
 			_RealState.Handler = nullptr;
 			RTT->RTT_MR = 0;
@@ -1206,7 +1210,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 			{
 				RTT->RTT_AR = TimerTicks >> 16;
 				_RealState.Handler = &(_RealState.HandlerA = [Do = std::move(Do)]()
-									  {
+									   {
 				if (!--_RealState.OverflowCount)
 					Do(); });
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
@@ -1239,7 +1243,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 					RTT->RTT_AR = RTT_AR;
 					_RealState.OverflowCount = ++OverflowTarget;
 					_RealState.Handler = &(_RealState.HandlerA = [Do = std::move(Do), RTT_AR, OverflowTarget, DoneCallback = std::move(DoneCallback)]()
-										  {
+										   {
 					if (!--_RealState.OverflowCount) {
 						if (--_RealState.RepeatLeft) {
 							RTT->RTT_AR = RTT_AR; // 伪暂停算法可能修改AR，所以每次都要重新设置
@@ -1261,7 +1265,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 					RTT->RTT_AR = -1;
 					RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
 					_RealState.Handler = &(_RealState.HandlerA = [Do = std::move(Do), DoneCallback = std::move(DoneCallback)]()
-										  {
+										   {
 					if (!--_RealState.RepeatLeft) {
 						RTT->RTT_MR = 0;
 						_RealState.Handler = nullptr;
@@ -1276,7 +1280,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 				const uint32_t RTT_AR = TimerTicks;
 				RTT->RTT_AR = RTT_AR;
 				_RealState.Handler = &(_RealState.HandlerA = [Do = std::move(Do), DoneCallback = std::move(DoneCallback), RTT_AR]()
-									  {
+									   {
 				if (--_RealState.RepeatLeft)
 					RTT->RTT_AR += RTT_AR;
 				else {
@@ -1324,7 +1328,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 					const uint16_t OverflowTargetB = (TimerTicksB >> 48) + 1;
 					RTT_AR_B = TimerTicksB >> 16;
 					_RealState.Handler = &(_RealState.HandlerA = [OverflowTargetB, RTT_AR_B, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
-										  {
+										   {
 					if (!--_RealState.OverflowCount) {
 						if (--_RealState.RepeatLeft) {
 							_RealState.OverflowCount += OverflowTargetB;
@@ -1374,7 +1378,7 @@ using _SlowTick = std::chrono::duration<uint64_t, std::ratio<1, 29400>>; // 数�
 			}
 			RTT->RTT_AR = RTT_AR_A;
 			_RealState.Handler = &(_RealState.HandlerA = [RTT_AR_B, DoA = std::move(DoA), DoneCallback = std::move(DoneCallback)]()
-								  {
+								   {
 			if (--_RealState.RepeatLeft) {
 				RTT->RTT_AR += RTT_AR_B;
 				_RealState.Handler = &_RealState.HandlerB;
