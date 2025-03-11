@@ -10,8 +10,8 @@ using namespace Timers_one_for_all;
 using namespace std::chrono_literals;
 constexpr uint8_t LED = 8;
 constexpr uint8_t Buzzer = 22;
-const TimerClass* BeatTimer;
-const TimerClass* PauseTimer;
+TimerClass* BeatTimer;
+TimerClass* PauseTimer;
 void setup() {
   // 首先点亮LED
   pinMode(LED, OUTPUT);
@@ -20,26 +20,26 @@ void setup() {
   digitalWrite(LED, HIGH);
 
   // 5秒后熄灭LED灯，但不阻断程序
-  const TimerClass* const LEDTimer = AllocateTimer();
+  TimerClass* const LEDTimer = AllocateTimer();
   LEDTimer->DoAfter(5s, []() {
     digitalWrite(LED, LOW);
   });
   //每隔2秒，就生成2500㎐脉冲1秒，重复3次
   BeatTimer = AllocateTimer();
-  const TimerClass* const ToneTimer = AllocateTimer();
+  TimerClass* const ToneTimer = AllocateTimer();
   BeatTimer->RepeatEvery(
     2s, [ToneTimer]() {
       ToneTimer->RepeatEvery(200us, Quick_digital_IO_interrupt::DigitalToggle<Buzzer>, 1000000us);
     },
     3);
-  const TimerClass* const DelayTimer = AllocateTimer();
+  TimerClass* const DelayTimer = AllocateTimer();
 
   DelayTimer->Delay(8s);
   // 将程序阻断8秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器从第2s开始，5000㎐响1s停1s，重复3次。
 
   // 使用AllocateTimer分配的计时器，用完后记得释放才能被再次分配
-  BeatTimer->Allocatable(true);
-  ToneTimer->Allocatable(true);
+  BeatTimer->Allocatable = true;
+  ToneTimer->Allocatable = true;
 
   // 将LED灯先亮2秒，再熄灭1秒，无限循环。之前的LEDTimer可以重复使用，不必重新分配。
   digitalWrite(LED, HIGH);
@@ -52,13 +52,13 @@ void setup() {
   });
 
   // 设置20秒后继续LED的无限闪烁
-  const TimerClass* const ContinueTimer = AllocateTimer();
+  TimerClass* const ContinueTimer = AllocateTimer();
   ContinueTimer->DoAfter(20s, [LEDTimer]() {
     LEDTimer->Continue();
   });
 
   // 设置30秒后终止LED的无限闪烁，应当停留在暗状态
-  const TimerClass* const StopTimer = AllocateTimer();
+  TimerClass* const StopTimer = AllocateTimer();
   StopTimer->DoAfter(30s, [LEDTimer]() {
     LEDTimer->Stop();
   });

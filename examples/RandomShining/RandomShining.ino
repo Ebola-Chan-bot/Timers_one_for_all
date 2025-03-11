@@ -3,7 +3,7 @@
 
 constexpr uint8_t LED = 8;
 using namespace Timers_one_for_all;
-void Toggle(const TimerClass* LEDTimer) {
+void Toggle(TimerClass* LEDTimer) {
   //递归实现无限闪烁
   static uint8_t State = LOW;
   digitalWrite(LED, State = 1 - State);

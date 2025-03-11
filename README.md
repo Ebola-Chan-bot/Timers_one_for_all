@@ -58,53 +58,49 @@ using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
 // 使用此常数表示无限重复，直到手动停止
 constexpr uint64_t InfiniteRepeat = -1;
 // 分配一个接受自动分配的计时器。如果没有这样的计时器，返回nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。被此方法分配返回的计时器将不再接受自动分配，需要手动设置Allocatable才能使其重新接受自动分配。
-TimerClass const* AllocateTimer();
+TimerClass* AllocateTimer();
 // 分配一个接受自动分配的计时器unique_ptr。如果没有这样的计时器，返回指针值为nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。此unique_ptr析构前计时器将不再接受自动分配。
-inline std::unique_ptr<TimerClass const, void (*)(TimerClass const*)> AllocateTimerUnique();
+inline std::unique_ptr<TimerClass, void (*)(TimerClass*)> AllocateTimerUnique();
 ```
 指针指向一个具体的硬件计时器，调用`TimerClass`的成员方法布置任何计时任务。包括：
 ```C++
 // 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
-void Pause() const;
+void Pause();
 // 继续计时器。继续一个非处于暂停状态的计时器将不做任何事
 void Continue() const;
-// 指示当前计时器是否接受自动分配。接受分配的计时器不一定空闲，应以Busy的返回值为准
-bool Allocatable() const;
-// 设置当前计时器是否接受自动分配。此项设置不会改变即使器的忙闲状态。
-void Allocatable(bool A) const;
 // 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 bool Busy() const;
 // 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
-void Stop() const;
+void Stop();
 // 开始计时任务。稍后可用GetTiming获取已记录的时间。
-void StartTiming() const;
+void StartTiming();
 // 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
 template <typename T>
 T GetTiming() const;
 // 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 template <typename T>
-void Delay(T Duration) const;
+void Delay(T Duration);
 // 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。此方法一定会覆盖计时器的上一个任务，即使延时为0。
 template <typename T>
-void DoAfter(T After, std::move_only_function<void() const>&& Do) const;
+void DoAfter(T After, std::move_only_function<void() const>&& Do);
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。如果重复次数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
-void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {}) const;
+void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
-void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr) const;
+void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
-void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {}) const;
+void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定时长（时间到后立即停止，因此DoA可能会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
-void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr) const;
+void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);
 ```
 所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。不同的特化类型可以用`std::chrono_duration_cast`相互转换。建议`using namespace std::chrono_literals`以使用更优雅的`duration`字面量。
 
 绝大多数简单应用场景下，所有的`std::move_only_function<void()const>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()const>&&`将会被移动构造而转移所有权，原对象将处于未指明状态。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。此外需注意，如果输入的可调用对象在调用时会更改本计时器绑定的可调用对象，这意味着该对象的行为会析构对象自身，则此析构行为之后不得再访问对象自身的资源，因为可能已经被释放。例如：
 ```C++
-TimerClass const *Timer = AllocateTimer();
+TimerClass *Timer = AllocateTimer();
 uint8_t a = 0;
 Timer->DoAfter(1s, [&a, Timer]()
 			   {
@@ -119,15 +115,15 @@ Timer->DoAfter(1s, [&a, Timer]()
 
 任务结束后，一般应当释放计时器，使其再次接受自动分配。但若使用unique_ptr则可以借助RAII机制自动释放计时器，而无需手动管理。
 ```C++
-TimerClass const* Timer = AllocateTimer();
+TimerClass* Timer = AllocateTimer();
 Timer->Delay(3s);
 
-//使用完毕后用Allocatable(true)释放计时器
-Timer->Allocatable(true);
+//使用完毕后用`Allocatable = true`释放计时器
+Timer->Allocatable = true;
 
 //如果使用unique_ptr，则可以自动释放：
 {
-	std::unique_ptr<TimerClass const, void (*)(TimerClass const*)> TimerUnique = AllocateTimerUnique();
+	std::unique_ptr<TimerClass, void (*)(TimerClass*)> TimerUnique = AllocateTimerUnique();
 	TimerUnique->Delay(3s);
 	//TimerUnique析构时自动释放计时器
 }

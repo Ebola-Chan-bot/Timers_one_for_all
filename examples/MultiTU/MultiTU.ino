@@ -4,7 +4,7 @@
 #include "Timers_one_for_all.hpp"
 
 using namespace Timers_one_for_all;
-TimerClass const *Timer;
+TimerClass *Timer;
 void setup() {
   Serial.begin(9600);
   (Timer = AllocateTimer())->StartTiming();
@@ -13,8 +13,7 @@ void setup() {
 //SAM架构的bug，loop函数不能放在其它翻译单元
 void loop2();
 
-void loop()
-{
+void loop() {
   loop2();
 }
 //在不多不少正好一个翻译单元中包含定义头文件
