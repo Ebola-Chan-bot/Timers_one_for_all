@@ -72,6 +72,7 @@ namespace Timers_one_for_all
 #endif
 	struct TimerClass
 	{
+		//指示计时器是否接受自动分配。如果true，将可能被AllocateTimer方法选中。如果不希望该计时器被AllocateTimer选中，应将此值设为false。默认为true。
 		bool Allocatable = true;
 #ifdef ARDUINO_ARCH_AVR
 		// 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
