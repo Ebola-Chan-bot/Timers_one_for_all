@@ -72,7 +72,7 @@ namespace Timers_one_for_all
 #endif
 	struct TimerClass
 	{
-		//指示计时器是否接受自动分配。如果true，将可能被AllocateTimer方法选中。如果不希望该计时器被AllocateTimer选中，应将此值设为false。默认为true。
+		// 指示计时器是否接受自动分配。如果true，将可能被AllocateTimer方法选中。如果不希望该计时器被AllocateTimer选中，应将此值设为false。默认为true。
 		bool Allocatable = true;
 #ifdef ARDUINO_ARCH_AVR
 		// 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
@@ -103,7 +103,7 @@ namespace Timers_one_for_all
 		virtual void Continue() const = 0;
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() = 0;
-		const std::move_only_function<void() const> *_Handler = nullptr;
+		std::move_only_function<void() const>const *_Handler = nullptr;
 #endif
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 		virtual bool Busy() const = 0;
@@ -115,45 +115,6 @@ namespace Timers_one_for_all
 		// 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 		template <typename T>
 		void Delay(T Duration) { Delay(std::chrono::duration_cast<Tick>(Duration)); }
-		// 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。此方法一定会覆盖计时器的上一个任务，即使延时为0。
-		template <typename T>
-		void DoAfter(T After, std::move_only_function<void() const> &&Do) { DoAfter(std::chrono::duration_cast<Tick>(After), std::move(Do)); }
-		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。如果重复次数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
-		template <typename T>
-		void RepeatEvery(
-			T Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void() const> &&DoneCallback = []() {})
-		{
-			RepeatEvery(std::chrono::duration_cast<Tick>(Every), std::move(Do), RepeatTimes, std::move(DoneCallback));
-		}
-		// 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
-		template <typename T>
-		void RepeatEvery(
-			T Every, std::move_only_function<void() const> &&Do, T RepeatDuration, std::move_only_function<void() const> &&DoneCallback = nullptr)
-		{
-			const T TimeLeft = RepeatDuration % Every;
-			if (DoneCallback)
-				RepeatEvery(Every, std::move(Do), RepeatDuration / Every, [this, TimeLeft, &DoneCallback]()
-							{ DoAfter(TimeLeft, std::move(DoneCallback)); });
-			else
-				RepeatEvery(Every, std::move(Do), RepeatDuration / Every);
-		}
-		// 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
-		template <typename T>
-		void DoubleRepeat(
-			T AfterA, std::move_only_function<void() const> &&DoA, T AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void() const> &&DoneCallback = []() {})
-		{
-			DoubleRepeat(std::chrono::duration_cast<Tick>(AfterA), std::move(DoA), std::chrono::duration_cast<Tick>(AfterB), std::move(DoB), NumHalfPeriods, std::move(DoneCallback));
-		}
-		// 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定时长（时间到后立即停止，因此DoA可能会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
-		template <typename T>
-		void DoubleRepeat(
-			T AfterA, std::move_only_function<void() const> &&DoA, T AfterB, std::move_only_function<void() const> &&DoB, T RepeatDuration, std::move_only_function<void() const> &&DoneCallback = nullptr)
-		{
-			const T CycleLeft = RepeatDuration % (AfterA + AfterB);
-			const T HalfLeft = CycleLeft % AfterA;
-			DoubleRepeat(AfterA, std::move(DoA), AfterB, std::move(DoB), RepeatDuration / (AfterA + AfterB) * 2 + CycleLeft / AfterA, DoneCallback										  ? [this, HalfLeft, &DoneCallback]
-																																		  { DoAfter(HalfLeft, std::move(DoneCallback)); } : []() {});
-		}
 		TimerClass &operator=(const TimerClass &) = delete;
 		TimerClass &operator=(TimerClass &&) = delete;
 		TimerClass(const TimerClass &) = delete;
@@ -177,10 +138,17 @@ namespace Timers_one_for_all
 		uint64_t RepeatLeft;
 		virtual Tick GetTiming() const = 0;
 		virtual void Delay(Tick) = 0;
-		virtual void DoAfter(Tick After, std::move_only_function<void() const> &&Do) = 0;
-		virtual void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) = 0;
-		virtual void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) = 0;
+#define _TOFA_Reference const &
+#define _TOFA_StdMove(Object) Object
+#include "_TOFA_RTO_Declare.hpp"
+#define _TOFA_Reference &&
+#define _TOFA_StdMove(Object) std::move(Object)
+#include "_TOFA_RTO_Declare.hpp"
 	};
+#define _TOFA_OverrideDeclare(Reference)                                                                                                                                           \
+	void DoAfter(Tick After, std::move_only_function<void() const> Reference Do) override;                                                                                         \
+	void RepeatEvery(Tick Every, std::move_only_function<void() const> Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> Reference DoneCallback) override; \
+	void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> Reference DoA, Tick AfterB, std::move_only_function<void() const> Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> Reference DoneCallback) override;
 #ifdef ARDUINO_ARCH_AVR
 #define _MMIO_BYTE(mem_addr) mem_addr
 #define _MMIO_WORD(mem_addr) mem_addr
@@ -196,9 +164,8 @@ namespace Timers_one_for_all
 	protected:
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 	} HardwareTimer0;
 #endif
 	struct TimerClass1 : TimerClass
@@ -218,9 +185,8 @@ namespace Timers_one_for_all
 		_RuntimeReference<uint16_t> const OCRB;
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 	};
 #ifdef TOFA_TIMER1
 	// 1号计时器
@@ -239,9 +205,8 @@ namespace Timers_one_for_all
 	protected:
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 	} HardwareTimer2;
 #endif
 #ifdef TOFA_TIMER3
@@ -295,9 +260,8 @@ namespace Timers_one_for_all
 		uint32_t VAL;
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 	} SystemTimer;
 #endif
 #ifdef TOFA_REALTIMER
@@ -313,9 +277,8 @@ namespace Timers_one_for_all
 	protected:
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 	} RealTimer;
 #endif
 	enum class _PeripheralEnum
@@ -368,9 +331,8 @@ namespace Timers_one_for_all
 		uint32_t UL_ID_TC;
 		Tick GetTiming() const override;
 		void Delay(Tick) override;
-		void DoAfter(Tick After, std::move_only_function<void() const> &&Do) override;
-		void RepeatEvery(Tick Every, std::move_only_function<void() const> &&Do, uint64_t RepeatTimes, std::move_only_function<void() const> &&DoneCallback) override;
-		void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> &&DoA, Tick AfterB, std::move_only_function<void() const> &&DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> &&DoneCallback) override;
+		_TOFA_OverrideDeclare(&&);
+		_TOFA_OverrideDeclare(const &);
 		void Initialize();
 	} PeripheralTimers[static_cast<size_t>(_PeripheralEnum::NumPeripherals)];
 	// 所有可用的硬件计时器。此数组可用TimerEnum转换为size_t索引以获取对应指针。所有计时器默认接受自动分配。
