@@ -53,12 +53,16 @@ using namespace std::chrono_literals;
 ```C++
 // 可用的计时器个数
 constexpr uint8_t NumTimers = (uint8_t)TimerEnum::_NumTimers;
+
 // 计时器的最小精度单位
 using Tick = std::chrono::duration<uint64_t, std::ratio<1, F_CPU>>;
+
 // 使用此常数表示无限重复，直到手动停止
 constexpr uint64_t InfiniteRepeat = -1;
+
 // 分配一个接受自动分配的计时器。如果没有这样的计时器，返回nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。被此方法分配返回的计时器将不再接受自动分配，需要手动设置Allocatable才能使其重新接受自动分配。
 TimerClass* AllocateTimer();
+
 // 分配一个接受自动分配的计时器unique_ptr。如果没有这样的计时器，返回指针值为nullptr。此方法优先分配序数较大的的计时器（对SAM架构，优后分配实时计时器和系统计时器）。在进入setup之前调用此方法是未定义行为。此unique_ptr析构前计时器将不再接受自动分配。
 inline std::unique_ptr<TimerClass, void (*)(TimerClass*)> AllocateTimerUnique();
 ```
@@ -66,32 +70,46 @@ inline std::unique_ptr<TimerClass, void (*)(TimerClass*)> AllocateTimerUnique();
 ```C++
 // 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
 void Pause();
+
 // 继续计时器。继续一个非处于暂停状态的计时器将不做任何事
 void Continue() const;
+
 // 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 bool Busy() const;
+
 // 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 void Stop();
+
 // 开始计时任务。稍后可用GetTiming获取已记录的时间。
 void StartTiming();
+
+//刷新计时器。在有中断场景下无需使用此方法。在无中断场景下，则必须经常调用此方法手动检查中断。
+void RefreshTiming();
+
 // 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
 template <typename T>
 T GetTiming() const;
+
 // 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 template <typename T>
 void Delay(T Duration);
+
 // 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。此方法一定会覆盖计时器的上一个任务，即使延时为0。
 template <typename T>
 void DoAfter(T After, std::move_only_function<void() const>&& Do);
+
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。如果重复次数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
 void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
+
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
 void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);
+
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
 void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
+
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定时长（时间到后立即停止，因此DoA可能会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
 void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);

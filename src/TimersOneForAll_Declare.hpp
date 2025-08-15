@@ -103,18 +103,25 @@ namespace Timers_one_for_all
 		virtual void Continue() const = 0;
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() = 0;
-		std::move_only_function<void() const>const *_Handler = nullptr;
+		std::move_only_function<void() const> const *_Handler = nullptr;
 #endif
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 		virtual bool Busy() const = 0;
+
 		// 开始计时任务。稍后可用GetTiming获取已记录的时间。
 		virtual void StartTiming() = 0;
+
+		// 刷新计时器。在有中断场景下无需使用此方法。在无中断场景下，则必须经常调用此方法手动检查中断。
+		virtual void RefreshTiming() const = 0;
+
 		// 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
 		template <typename T>
 		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
+
 		// 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 		template <typename T>
 		void Delay(T Duration) { Delay(std::chrono::duration_cast<Tick>(Duration)); }
+
 		TimerClass &operator=(const TimerClass &) = delete;
 		TimerClass &operator=(TimerClass &&) = delete;
 		TimerClass(const TimerClass &) = delete;
@@ -160,6 +167,7 @@ namespace Timers_one_for_all
 		bool Busy() const override;
 		void Stop() const override;
 		void StartTiming() override;
+		void RefreshTiming() const override;
 
 	protected:
 		Tick GetTiming() const override;
@@ -174,6 +182,7 @@ namespace Timers_one_for_all
 		bool Busy() const override;
 		void Stop() const override;
 		void StartTiming() override;
+		void RefreshTiming() const override;
 		const std::move_only_function<void() const> *_OVF;
 
 	protected:
@@ -200,6 +209,7 @@ namespace Timers_one_for_all
 		bool Busy() const override;
 		void Stop() const override;
 		void StartTiming() override;
+		void RefreshTiming() const override;
 		const std::move_only_function<void() const> *_OVF;
 
 	protected:
@@ -255,6 +265,7 @@ namespace Timers_one_for_all
 		void Continue() const override;
 		void Stop() override;
 		void StartTiming() override;
+		void RefreshTiming() const override;
 
 	protected:
 		uint32_t VAL;
@@ -273,6 +284,7 @@ namespace Timers_one_for_all
 		void Continue() const override;
 		void Stop() override;
 		void StartTiming() override;
+		void RefreshTiming() const override;
 
 	protected:
 		Tick GetTiming() const override;
@@ -321,8 +333,8 @@ namespace Timers_one_for_all
 		void Stop() override { Channel.TC_CCR = TC_CCR_CLKDIS; }
 		void StartTiming() override;
 		PeripheralTimerClass(TcChannel &Channel, IRQn_Type irq, uint32_t UL_ID_TC) : Channel(Channel), irq(irq), UL_ID_TC(UL_ID_TC) {}
-		void _ClearAndHandle() const;
 		TcChannel &Channel;
+		void RefreshTiming() const override;
 
 	protected:
 		bool Uninitialized = true;

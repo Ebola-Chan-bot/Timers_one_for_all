@@ -173,6 +173,15 @@ namespace Timers_one_for_all
 		TIFR0 = -1;
 		TIMSK0 = (1 << OCIE0A) | (1 << TOIE0);
 	}
+	void TimerClass0::RefreshTiming() const
+	{
+		uint8_t const State = TIMSK0 & TIFR0;
+		TIFR0 = State;
+		if (State & 1 << OCF0A)
+			(*_COMPA)();
+		if (State & 1 << OCF0B)
+			(*_COMPB)();
+	}
 	Tick TimerClass0::GetTiming() const
 	{
 		const uint8_t Clock = TCCR0B;
@@ -223,6 +232,17 @@ namespace Timers_one_for_all
 		TCNT = 0;
 		TIFR = -1;
 		TIMSK = 1 << TOIE1;
+	}
+	void TimerClass1::RefreshTiming() const
+	{
+		uint8_t const State = TIMSK & TIFR;
+		TIFR = State;
+		if (State & 1 << TOV1)
+			(*_OVF)();
+		if (State & 1 << OCF1A)
+			(*_COMPA)();
+		if (State & 1 << OCF1B)
+			(*_COMPB)();
 	}
 	Tick TimerClass1::GetTiming() const
 	{
@@ -276,6 +296,17 @@ namespace Timers_one_for_all
 		TCNT2 = 0;
 		TIFR2 = -1;
 		TIMSK2 = 1 << TOIE1;
+	}
+	void TimerClass2::RefreshTiming() const
+	{
+		uint8_t const State = TIMSK2 & TIFR2;
+		TIFR2 = State;
+		if (State & 1 << TOV2)
+			(*_OVF)();
+		if (State & 1 << OCF2A)
+			(*_COMPA)();
+		if (State & 1 << OCF2B)
+			(*_COMPB)();
 	}
 	Tick TimerClass2::GetTiming() const
 	{
@@ -345,6 +376,12 @@ namespace Timers_one_for_all
 			SystemTimer.OverflowCount = 1;
 			SystemTimer._Handler = &SystemTimer.HandlerB;
 		} });
+	}
+	void SystemTimerClass::RefreshTiming() const
+	{
+		constexpr uint32_t MaskValue = SysTick_CTRL_COUNTFLAG_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+		if (SysTick->CTRL & MaskValue == MaskValue)
+			sysTickHook();
 	}
 	Tick SystemTimerClass::GetTiming() const
 	{
@@ -442,6 +479,11 @@ namespace Timers_one_for_all
 			;
 		NVIC_EnableIRQ(RTT_IRQn);
 	}
+	void RealTimerClass::RefreshTiming() const
+	{
+		if (RTT->RTT_SR & RTT_SR_ALMS && RTT->RTT_MR & RTT_MR_ALMIEN)
+			RTT_Handler();
+	}
 	Tick RealTimerClass::GetTiming() const
 	{
 		uint64_t TimerTicks = (static_cast<uint64_t>(OverflowCount + 1) << 32) + RTT->RTT_VR - RTT->RTT_AR;
@@ -499,10 +541,10 @@ namespace Timers_one_for_all
 		if ((Channel.TC_CMR & TC_CMR_TCCLKS_Msk) > TC_CMR_TCCLKS_TIMER_CLOCK5)
 			Channel.TC_CMR = Channel.TC_CMR & ~TC_CMR_TCCLKS_Msk | TCCLKS;
 	}
-#define _TOFA_HandlerDef(Index)                                                    \
-	extern "C" void TC##Index##_Handler()                                          \
-	{                                                                              \
-		PeripheralTimers[(size_t)_PeripheralEnum::Timer##Index]._ClearAndHandle(); \
+#define _TOFA_HandlerDef(Index)                                                  \
+	extern "C" void TC##Index##_Handler()                                        \
+	{                                                                            \
+		PeripheralTimers[(size_t)_PeripheralEnum::Timer##Index].RefreshTiming(); \
 	}
 
 #ifdef TOFA_TIMER0
@@ -532,11 +574,6 @@ namespace Timers_one_for_all
 #ifdef TOFA_TIMER8
 	_TOFA_HandlerDef(8);
 #endif
-	void PeripheralTimerClass::_ClearAndHandle() const
-	{
-		Channel.TC_SR; // 必须读取一次才能清空中断旗帜
-		(*_Handler)();
-	}
 	void PeripheralTimerClass::Initialize()
 	{
 		if (Uninitialized)
@@ -573,6 +610,11 @@ namespace Timers_one_for_all
 			}
 		};
 		Channel.TC_IER = TC_IER_COVFS;
+	}
+	void PeripheralTimerClass::RefreshTiming() const
+	{
+		if (Channel.TC_SR & Channel.TC_IMR)
+			(*_Handler)();
 	}
 	Tick PeripheralTimerClass::GetTiming() const
 	{
