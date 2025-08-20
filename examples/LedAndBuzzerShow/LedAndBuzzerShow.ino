@@ -9,7 +9,7 @@
 using namespace Timers_one_for_all;
 using namespace std::chrono_literals;
 constexpr uint8_t LED = 8;
-constexpr uint8_t Buzzer = 22;
+constexpr uint8_t Buzzer = 3;
 TimerClass* BeatTimer;
 TimerClass* PauseTimer;
 void setup() {
@@ -32,10 +32,10 @@ void setup() {
       ToneTimer->RepeatEvery(200us, Quick_digital_IO_interrupt::DigitalToggle<Buzzer>, 1000000us);
     },
     3);
-  TimerClass* const DelayTimer = AllocateTimer();
+   TimerClass* const DelayTimer = AllocateTimer();
 
-  DelayTimer->Delay(8s);
-  // 将程序阻断8秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器从第2s开始，5000㎐响1s停1s，重复3次。
+   DelayTimer->Delay(8s);
+   // 将程序阻断8秒，阻断期间之前设置的中断仍然有效。阻断期间应当观察到，5秒后LED熄灭，蜂鸣器从第2s开始，5000㎐响1s停1s，重复3次。
 
   // 使用AllocateTimer分配的计时器，用完后记得释放才能被再次分配
   BeatTimer->Allocatable = true;
@@ -57,9 +57,10 @@ void setup() {
     LEDTimer->Continue();
   });
 
-  // 设置30秒后终止LED的无限闪烁，应当停留在暗状态
   TimerClass* const StopTimer = AllocateTimer();
-  StopTimer->DoAfter(30s, [LEDTimer]() {
+
+  // 设置30秒后终止LED的无限闪烁，应当停留在暗状态。但此处实际多设1㎳，因为存在误差，如果设置正好30s有可能来不及执行最后一次熄灯，导致停留在亮状态。
+  StopTimer->DoAfter(30001ms, [LEDTimer]() {
     LEDTimer->Stop();
   });
   return;

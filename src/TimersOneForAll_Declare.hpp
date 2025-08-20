@@ -58,16 +58,16 @@ namespace Timers_one_for_all
 	template <typename T>
 	struct _RuntimeReference
 	{
-		operator volatile T &() const
+		operator T volatile &() const
 		{
-			return *(volatile T *)Value;
+			return *Value;
 		}
-		volatile T &operator=(T New) const
+		T volatile &operator=(T New) const
 		{
-			return *(volatile T *)Value = New;
+			return *Value = New;
 		}
-		constexpr _RuntimeReference(size_t Value) : Value(Value) {}
-		const size_t Value;
+		constexpr _RuntimeReference(T volatile &Value) : Value(&Value) {}
+		T volatile *const Value;
 	};
 #endif
 	struct TimerClass
@@ -104,7 +104,7 @@ namespace Timers_one_for_all
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() = 0;
 
-		//当前正在工作的处理函数指针。为nullptr表示没有正在工作的处理函数。
+		// 当前正在工作的处理函数指针。为nullptr表示没有正在工作的处理函数。
 		std::move_only_function<void() const> const *_Handler = nullptr;
 #endif
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
@@ -132,7 +132,7 @@ namespace Timers_one_for_all
 	protected:
 		virtual ~TimerClass() = default;
 
-		//供派生类实现用的通用缓存位置
+		// 供派生类实现用的通用缓存位置
 
 		std::move_only_function<void() const> HandlerA;
 		std::move_only_function<void() const> HandlerB;

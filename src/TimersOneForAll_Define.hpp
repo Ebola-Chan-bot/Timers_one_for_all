@@ -120,7 +120,7 @@ namespace Timers_one_for_all
 	template <typename T>
 	using _FirstArgumentType_t = typename _FirstArgumentType<T>::type;
 	template <typename Prescaler>
-	uint32_t _PrescalerOverflow(uint32_t Cycles, volatile uint8_t &Clock)
+	uint32_t _PrescalerOverflow(uint32_t Cycles, uint8_t volatile &Clock)
 	{
 		if (const uint32_t OverflowTarget = Cycles >> Prescaler::MaxShift)
 		{

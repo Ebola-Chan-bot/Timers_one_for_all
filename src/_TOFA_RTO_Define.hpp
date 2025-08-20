@@ -514,13 +514,13 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 		uint32_t CTRL = _SysTick_CTRL_MCK;
 		SysTick->LOAD = -1;
 		_TOFA_PublicCache(DoneCallback);
-		if (max(TimeTicksA, TimeTicksB) >> 24)
+		if (std::max(TimeTicksA, TimeTicksB) >> 24)
 		{
 			TimeTicksA >>= 3;
 			TimeTicksB >>= 3;
 			uint32_t OverflowTargetA = (TimeTicksA >> 24);
 			uint32_t OverflowTargetB = (TimeTicksB >> 24);
-			if (max(OverflowTargetA, OverflowTargetB))
+			if (std::max(OverflowTargetA, OverflowTargetB))
 			{
 				const uint32_t TicksLeftA = TimeTicksA;
 				const uint32_t TicksLeftB = TimeTicksB;
@@ -811,7 +811,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 		RTT->RTT_MR = 0;
 		const uint64_t TimerTicksA = std::chrono::duration_cast<_SlowTick>(AfterA).count();
 		const uint64_t TimerTicksB = std::chrono::duration_cast<_SlowTick>(AfterB).count();
-		const uint64_t MaxTicks = max(TimerTicksA, TimerTicksB);
+		const uint64_t MaxTicks = std::max(TimerTicksA, TimerTicksB);
 		RepeatLeft = NumHalfPeriods;
 		uint32_t RTPRES = MaxTicks >> 32;
 		uint32_t RTT_AR_A;
