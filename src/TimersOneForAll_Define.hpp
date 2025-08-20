@@ -161,11 +161,11 @@ namespace Timers_one_for_all
 		OverflowCountA = 0;
 		_COMPA = &(HandlerA = [this]()
 				   {
-		if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCR0B]) {
-			OverflowCountA = 1;
-			if ((++TCCR0B >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
-			_COMPA = &HandlerB;
-		} });
+				if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCR0B]) {
+					OverflowCountA = 1;
+					if ((++TCCR0B >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
+						_COMPA = &HandlerB;
+				} });
 		HandlerB = [&OverflowCount = OverflowCountA]()
 		{ OverflowCount++; };
 		OCR0A = 0;
@@ -182,7 +182,7 @@ namespace Timers_one_for_all
 		if (State & 1 << OCF0B)
 			(*_COMPB)();
 	}
-	Tick TimerClass0::GetTiming() const
+	Tick TimerClass0::_GetTiming() const
 	{
 		const uint8_t Clock = TCCR0B;
 		return Tick(((uint64_t)OverflowCountA << 8) + TCNT0 << _Prescaler01::BitShifts[Clock ? Clock : Clock]);
@@ -222,11 +222,11 @@ namespace Timers_one_for_all
 		OverflowCountA = 0;
 		_OVF = &(HandlerA = [this]()
 				 {
-		if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCRB]) {
-			OverflowCountA = 1;
-			if ((++TCCRB >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
-				_OVF = &HandlerB;
-		} });
+				if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCRB]) {
+					OverflowCountA = 1;
+					if ((++TCCRB >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
+						_OVF = &HandlerB;
+				} });
 		HandlerB = [&OverflowCount = OverflowCountA]()
 		{ OverflowCount++; };
 		TCNT = 0;
@@ -244,7 +244,7 @@ namespace Timers_one_for_all
 		if (State & 1 << OCF1B)
 			(*_COMPB)();
 	}
-	Tick TimerClass1::GetTiming() const
+	Tick TimerClass1::_GetTiming() const
 	{
 		const uint8_t Clock = TCCRB;
 		return Tick(((uint64_t)OverflowCountA << 16) + TCNT << _Prescaler01::BitShifts[Clock ? Clock : Clock]);
@@ -257,8 +257,8 @@ namespace Timers_one_for_all
 		OCRA = Time.count() >> _Prescaler01::BitShifts[TCCRB];
 		_COMPA = &(HandlerA = [&TIMSK = TIMSK, &OverflowCount]()
 				   {
-		if (!--OverflowCount)
-			TIMSK = 0; });
+				if (!--OverflowCount)
+					TIMSK = 0; });
 		TCNT = 0;
 		TIFR = -1;
 		TIMSK = 1 << OCIE1A;
@@ -286,11 +286,11 @@ namespace Timers_one_for_all
 		OverflowCountA = 0;
 		_OVF = &(HandlerA = [this]()
 				 {
-		if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCR2B]) {
-			OverflowCountA = 1;
-			if ((++TCCR2B >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
-				_OVF = &HandlerB;
-		} });
+				if (++OverflowCountA == _Prescaler01::AdvanceFactor[TCCR2B]) {
+					OverflowCountA = 1;
+					if ((++TCCR2B >= std::extent_v<decltype(_Prescaler01::AdvanceFactor)>))
+						_OVF = &HandlerB;
+				} });
 		HandlerB = [&OverflowCount = OverflowCountA]()
 		{ OverflowCount++; };
 		TCNT2 = 0;
@@ -308,7 +308,7 @@ namespace Timers_one_for_all
 		if (State & 1 << OCF2B)
 			(*_COMPB)();
 	}
-	Tick TimerClass2::GetTiming() const
+	Tick TimerClass2::_GetTiming() const
 	{
 		const uint8_t Clock = TCCR2B;
 		return Tick(((uint64_t)OverflowCountA << 8) + TCNT2 << _Prescaler2::BitShifts[Clock ? Clock : Clock]);
@@ -321,8 +321,8 @@ namespace Timers_one_for_all
 		OCR2A = Time.count() >> _Prescaler2::BitShifts[TCCR2B];
 		_COMPA = &(HandlerA = [&OverflowCount]()
 				   {
-		if (!--OverflowCount)
-			TIMSK2 = 0; });
+				if (!--OverflowCount)
+					TIMSK2 = 0; });
 		TCNT2 = 0;
 		TIFR2 = -1;
 		TIMSK2 = 1 << OCIE2A;
@@ -371,11 +371,11 @@ namespace Timers_one_for_all
 		{ SystemTimer.OverflowCount++; };
 		_Handler = &(HandlerA = []()
 					 {
-		if (!--SystemTimer.OverflowCount) {
-			SysTick->CTRL = _SysTick_CTRL_MCK8;
-			SystemTimer.OverflowCount = 1;
-			SystemTimer._Handler = &SystemTimer.HandlerB;
-		} });
+				if (!--SystemTimer.OverflowCount) {
+					SysTick->CTRL = _SysTick_CTRL_MCK8;
+					SystemTimer.OverflowCount = 1;
+					SystemTimer._Handler = &SystemTimer.HandlerB;
+				} });
 	}
 	void SystemTimerClass::RefreshTiming() const
 	{
@@ -383,7 +383,7 @@ namespace Timers_one_for_all
 		if (SysTick->CTRL & MaskValue == MaskValue)
 			sysTickHook();
 	}
-	Tick SystemTimerClass::GetTiming() const
+	Tick SystemTimerClass::_GetTiming() const
 	{
 		return Tick((static_cast<uint64_t>(OverflowCount + 1) << 24) - SysTick->VAL << (SysTick->CTRL & SysTick_CTRL_CLKSOURCE_Msk ? 0 : 3));
 	}
@@ -401,7 +401,7 @@ namespace Timers_one_for_all
 				OverflowCount++;
 				_Handler = &(HandlerA = [&OverflowCount]()
 							 { if (!--OverflowCount)
-				SysTick->CTRL = 0; });
+					SysTick->CTRL = 0; });
 				SysTick->LOAD = TimeTicks;
 				SysTick->CTRL = _SysTick_CTRL_MCK8;
 				while (!SysTick->VAL)
@@ -484,7 +484,7 @@ namespace Timers_one_for_all
 		if (RTT->RTT_SR & RTT_SR_ALMS && RTT->RTT_MR & RTT_MR_ALMIEN)
 			RTT_Handler();
 	}
-	Tick RealTimerClass::GetTiming() const
+	Tick RealTimerClass::_GetTiming() const
 	{
 		uint64_t TimerTicks = (static_cast<uint64_t>(OverflowCount + 1) << 32) + RTT->RTT_VR - RTT->RTT_AR;
 		if (const uint16_t RTPRES = RTT->RTT_MR)
@@ -518,10 +518,10 @@ namespace Timers_one_for_all
 		}
 		_Handler = &(HandlerA = [&OverflowCount]()
 					 {
-		if (!--OverflowCount) {
-			RealTimer._Handler = nullptr;
-			RTT->RTT_MR = 0;
-		} });
+				if (!--OverflowCount) {
+					RealTimer._Handler = nullptr;
+					RTT->RTT_MR = 0;
+				} });
 		NVIC_EnableIRQ(RTT_IRQn);
 		while (OverflowCount)
 			;
@@ -594,11 +594,11 @@ namespace Timers_one_for_all
 		OverflowCount = 0;
 		_Handler = &(HandlerA = [this]()
 					 {
-		if (++OverflowCount == 4) {
-			if ((++Channel.TC_CMR & TC_CMR_TCCLKS_Msk) == TC_CMR_TCCLKS_TIMER_CLOCK4)
-				_Handler = &HandlerB;
-			OverflowCount = 1;
-		} });
+				if (++OverflowCount == 4) {
+					if ((++Channel.TC_CMR & TC_CMR_TCCLKS_Msk) == TC_CMR_TCCLKS_TIMER_CLOCK4)
+						_Handler = &HandlerB;
+					OverflowCount = 1;
+				} });
 		HandlerB = [this]()
 		{
 			if (++OverflowCount == (F_CPU >> 7) / 32768)
@@ -616,7 +616,7 @@ namespace Timers_one_for_all
 		if (Channel.TC_SR & Channel.TC_IMR)
 			(*_Handler)();
 	}
-	Tick PeripheralTimerClass::GetTiming() const
+	Tick PeripheralTimerClass::_GetTiming() const
 	{
 		const uint64_t TimeTicks = ((uint64_t)OverflowCount << 32) + Channel.TC_CV;
 		uint32_t TCCLKS = Channel.TC_CMR & TC_CMR_TCCLKS_Msk;
@@ -647,9 +647,9 @@ namespace Timers_one_for_all
 				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 				_Handler = &(HandlerA = [this, &OverflowCount]
 							 {
-				// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
-				if (!--OverflowCount)
-					Channel.TC_CMR |= TC_CMR_CPCDIS; });
+						// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
+						if (!--OverflowCount)
+							Channel.TC_CMR |= TC_CMR_CPCDIS; });
 				Channel.TC_IER = TC_IER_CPCS;
 				while (Channel.TC_SR & TC_SR_CLKSTA)
 					;
@@ -695,9 +695,21 @@ namespace Timers_one_for_all
 #define _TOFA_Reference &&
 #define _TOFA_Capture(Variable) Variable = std::move(Variable)
 #define _TOFA_DirectHandler &(HandlerA = std::move(Do))
+#define _TOFA_PublicCache(Callback) PublicCache = std::move(Callback)
+#define _TOFA_ThisCapture(Callback)
+#define _TOFA_ThisReference(Callback) PublicCache
+#define _TOFA_SingletonCapture(Callback)
+#define _TOFA_SingletonReference(Instance, Callback) Instance.PublicCache
+#define _TOFA_SelfCapture(Callback) ,&Callback = PublicCache
 #include "_TOFA_RTO_Define.hpp"
 #define _TOFA_Reference const &
 #define _TOFA_Capture(Variable) &Variable
 #define _TOFA_DirectHandler &Do
+#define _TOFA_PublicCache(Callback)
+#define _TOFA_ThisCapture(Callback) , &Callback
+#define _TOFA_ThisReference(Callback) Callback
+#define _TOFA_SingletonCapture(Callback) , &Callback
+#define _TOFA_SingletonReference(Instance, Callback) Callback
+#define _TOFA_SelfCapture(Callback) ,&Callback
 #include "_TOFA_RTO_Define.hpp"
 }

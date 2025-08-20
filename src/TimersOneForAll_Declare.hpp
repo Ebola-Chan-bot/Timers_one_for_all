@@ -103,6 +103,8 @@ namespace Timers_one_for_all
 		virtual void Continue() const = 0;
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() = 0;
+
+		//当前正在工作的处理函数指针。为nullptr表示没有正在工作的处理函数。
 		std::move_only_function<void() const> const *_Handler = nullptr;
 #endif
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
@@ -115,8 +117,8 @@ namespace Timers_one_for_all
 		virtual void RefreshTiming() const = 0;
 
 		// 获取从上次调用StartTiming以来经历的时间，排除中间暂停的时间。模板参数指定要返回的std::chrono::duration时间格式。如果上次StartTiming之后还调用了Stop或布置了其它任务，此方法将产生未定义行为。
-		template <typename T>
-		T GetTiming() const { return std::chrono::duration_cast<T>(GetTiming()); }
+		template <typename T = Tick>
+		T GetTiming() const { return std::chrono::duration_cast<T>(_GetTiming()); }
 
 		// 阻塞Duration时长。此方法一定会覆盖计时器的上一个任务，即使时长为0。此方法只能在主线程中使用，在中断处理函数中使用可能会永不返回。
 		template <typename T>
@@ -129,8 +131,12 @@ namespace Timers_one_for_all
 
 	protected:
 		virtual ~TimerClass() = default;
+
+		//供派生类实现用的通用缓存位置
+
 		std::move_only_function<void() const> HandlerA;
 		std::move_only_function<void() const> HandlerB;
+		std::move_only_function<void() const> PublicCache;
 #ifdef ARDUINO_ARCH_AVR
 		uint8_t Clock;
 		uint32_t OverflowCountA;
@@ -143,7 +149,7 @@ namespace Timers_one_for_all
 		uint32_t OverflowCount;
 #endif
 		uint64_t RepeatLeft;
-		virtual Tick GetTiming() const = 0;
+		virtual Tick _GetTiming() const = 0;
 		virtual void Delay(Tick) = 0;
 #define _TOFA_Reference const &
 #define _TOFA_StdMove(Object) Object
@@ -170,7 +176,7 @@ namespace Timers_one_for_all
 		void RefreshTiming() const override;
 
 	protected:
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);
@@ -192,7 +198,7 @@ namespace Timers_one_for_all
 		_RuntimeReference<uint16_t> const TCNT;
 		_RuntimeReference<uint16_t> const OCRA;
 		_RuntimeReference<uint16_t> const OCRB;
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);
@@ -213,7 +219,7 @@ namespace Timers_one_for_all
 		const std::move_only_function<void() const> *_OVF;
 
 	protected:
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);
@@ -269,7 +275,7 @@ namespace Timers_one_for_all
 
 	protected:
 		uint32_t VAL;
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);
@@ -287,7 +293,7 @@ namespace Timers_one_for_all
 		void RefreshTiming() const override;
 
 	protected:
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);
@@ -341,7 +347,7 @@ namespace Timers_one_for_all
 		uint32_t TCCLKS;
 		IRQn_Type irq;
 		uint32_t UL_ID_TC;
-		Tick GetTiming() const override;
+		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
 		_TOFA_OverrideDeclare(const &);

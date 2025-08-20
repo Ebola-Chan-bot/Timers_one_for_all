@@ -77,5 +77,6 @@
 		"bit": "cpp",
 		"concepts": "cpp",
 		"string_view": "cpp"
-	}
+	},
+	"C_Cpp.formatting": "clangFormat"
 }

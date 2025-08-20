@@ -6,12 +6,12 @@ void TimerClass0::DoAfter(Tick After, std::move_only_function<void() const> _TOF
 	OverflowCountA = _PrescalerOverflow<_Prescaler01>(After.count() >> 8, TCCR0B) + 1;
 	TCCR0A = 0;
 	OCR0A = After.count() >> _Prescaler01::BitShifts[TCCR0B];
-	_COMPA = &(HandlerA = [&OverflowCount = OverflowCountA, _TOFA_Capture(Do)]()
+	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]()
 			   {
-		if (!--OverflowCount) {
-			TIMSK0 = 1 << TOIE0;
-			Do();
-		} });
+			if (!--HardwareTimer0.OverflowCountA) {
+				TIMSK0 = 1 << TOIE0;
+				Do();
+			} });
 	TCNT0 = 0;
 	TIFR0 = -1;
 	TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
@@ -28,33 +28,33 @@ void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			TCCR0A = 0;
 			OCR0A = OcraTarget;
 			OverflowCountA = ++OverflowTarget;
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget, this]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft) {
-					OverflowCountA = OverflowTarget;
-					OCR0A += OcraTarget;
-				}
-				else
-					TIMSK0 = 1 << TOIE0;
-				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-				Do();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--HardwareTimer0.OverflowCountA) {
+						if (--HardwareTimer0.RepeatLeft) {
+							HardwareTimer0.OverflowCountA = OverflowTarget;
+							OCR0A += OcraTarget;
+						}
+						else
+							TIMSK0 = 1 << TOIE0;
+						// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+						Do();
+						if (!HardwareTimer0.RepeatLeft)
+							DoneCallback();
+					} });
 		}
 		else
 		{
 			TCCR0A = 1 << WGM01;
 			OCR0A = Every.count() >> _Prescaler01::BitShifts[TCCR0B];
-			_COMPA = &(HandlerA = [&RepeatLeft = RepeatLeft, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 					   {
-			if (!--RepeatLeft)
-				TIMSK0 = 1 << TOIE0;
-			// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-			Do();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (!--HardwareTimer0.RepeatLeft)
+						TIMSK0 = 1 << TOIE0;
+					// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+					Do();
+					if (!HardwareTimer0.RepeatLeft)
+						DoneCallback(); });
 		}
 		RepeatLeft = RepeatTimes;
 		TCNT0 = 0;
@@ -70,40 +70,41 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 	{
 		TIMSK0 = 1 << TOIE0;
 		AfterB += AfterA;
+		_TOFA_PublicCache(DoneCallback);
 		if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(AfterB.count() >> 8, TCCR0B))
 		{
 			TCCR0A = 0;
 			OCR0A = AfterA.count() >> _Prescaler01::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler01::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> _Prescaler01::MaxShift;
-			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft > 1) {
-					OverflowCountA = OverflowTarget;
-					OCR0A += OcrTarget;
-				}
-				else
-					TIMSK0 &= ~(1 << OCIE0A);
-				DoA();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--HardwareTimer0.OverflowCountA) {
+						if (--HardwareTimer0.RepeatLeft > 1) {
+							HardwareTimer0.OverflowCountA = OverflowTarget;
+							OCR0A += OcrTarget;
+						}
+						else
+							TIMSK0 &= ~(1 << OCIE0A);
+						DoA();
+						if (!HardwareTimer0.RepeatLeft)
+							_TOFA_SingletonReference(HardwareTimer0, DoneCallback)();
+					} });
 			OverflowCountB = OverflowTarget;
 			OCR0B = OcrTarget;
-			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback), this]()
+			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-				if (!--OverflowCountA) {
-					if (--RepeatLeft > 1) {
-						OverflowCountB = OverflowTarget;
-						OCR0B += OcrTarget;
-					}
-					else
-						TIMSK0 &= ~(1 << OCIE0B);
-					DoB();
-					if (!RepeatLeft)
-						DoneCallback();
-				} });
+							if (!--HardwareTimer0.OverflowCountA) {
+								if (--HardwareTimer0.RepeatLeft > 1) {
+									HardwareTimer0.OverflowCountB = OverflowTarget;
+									OCR0B += OcrTarget;
+								}
+								else
+									TIMSK0 &= ~(1 << OCIE0B);
+								DoB();
+								if (!HardwareTimer0.RepeatLeft)
+									_TOFA_SingletonReference(HardwareTimer0, DoneCallback)();
+							} });
 		}
 		else
 		{
@@ -111,21 +112,21 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			TCCR0A = 1 << WGM01;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR0B = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [&RepeatLeft = RepeatLeft, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK0 &= ~(1 << OCIE0B);
-			DoA();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--HardwareTimer0.RepeatLeft < 2)
+						TIMSK0 &= ~(1 << OCIE0B);
+					DoA();
+					if (!HardwareTimer0.RepeatLeft)
+						_TOFA_SingletonReference(HardwareTimer0, DoneCallback)(); });
 			OCR0A = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [&RepeatLeft = RepeatLeft, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK0 &= ~(1 << OCIE0A);
-			DoB();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--HardwareTimer0.RepeatLeft < 2)
+						TIMSK0 &= ~(1 << OCIE0A);
+					DoB();
+					if (!HardwareTimer0.RepeatLeft)
+						_TOFA_SingletonReference(HardwareTimer0, DoneCallback)(); });
 		}
 		RepeatLeft = NumHalfPeriods;
 		TCNT0 = 0;
@@ -145,10 +146,10 @@ void TimerClass1::DoAfter(Tick After, std::move_only_function<void() const> _TOF
 	OCRA = After.count() >> _Prescaler01::BitShifts[TCCRB];
 	_COMPA = &(HandlerA = [this, _TOFA_Capture(Do)]()
 			   {
-	if (!--OverflowCountA) {
-		TIMSK = 0;
-		Do();
-	} });
+			if (!--OverflowCountA) {
+				TIMSK = 0;
+				Do();
+			} });
 	TCNT = 0;
 	TIFR = -1;
 	TIMSK = 1 << OCIE1A;
@@ -166,30 +167,30 @@ void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			OverflowCountA = ++OverflowTarget;
 			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft) {
-					OverflowCountA = OverflowTarget;
-					OCRA += OcraTarget;
-				}
-				else
-					TIMSK = 0;
-				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-				Do();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--OverflowCountA) {
+						if (--RepeatLeft) {
+							OverflowCountA = OverflowTarget;
+							OCRA += OcraTarget;
+						}
+						else
+							TIMSK = 0;
+						// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+						Do();
+						if (!RepeatLeft)
+							DoneCallback();
+					} });
 		}
 		else
 		{
 			OCRA = Every.count() >> _Prescaler01::BitShifts[TCCRB];
 			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 					   {
-			if (!--RepeatLeft)
-				TIMSK = 0;
-			// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-			Do();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (!--RepeatLeft)
+						TIMSK = 0;
+					// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+					Do();
+					if (!RepeatLeft)
+						DoneCallback(); });
 			TCCRB |= 1 << WGM12;
 		}
 		RepeatLeft = RepeatTimes;
@@ -207,60 +208,61 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 		TIMSK = 0;
 		AfterB += AfterA;
 		TCCRA = 0;
+		_TOFA_PublicCache(DoneCallback);
 		if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler01>(AfterB.count() >> 16, TCCRB))
 		{
 			OCRA = AfterA.count() >> _Prescaler01::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler01::MaxShift + 16) + 1;
 			const uint16_t OcrTarget = AfterB.count() >> _Prescaler01::MaxShift;
-			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft > 1) {
-					OverflowCountA = OverflowTarget;
-					OCRA += OcrTarget;
-				}
-				else
-					TIMSK &= ~(1 << OCIE1A);
-				DoA();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--OverflowCountA) {
+						if (--RepeatLeft > 1) {
+							OverflowCountA = OverflowTarget;
+							OCRA += OcrTarget;
+						}
+						else
+							TIMSK &= ~(1 << OCIE1A);
+						DoA();
+						if (!RepeatLeft)
+							_TOFA_ThisReference(DoneCallback)();
+					} });
 			OverflowCountB = OverflowTarget;
 			OCRB = OcrTarget;
-			_COMPB = &(HandlerB = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+			_COMPB = &(HandlerB = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
 					   {
-				if (!--OverflowCountA) {
-					if (--RepeatLeft > 1) {
-						OverflowCountB = OverflowTarget;
-						OCRB += OcrTarget;
-					}
-					else
-						TIMSK &= ~(1 << OCIE1B);
-					DoB();
-					if (!RepeatLeft)
-						DoneCallback();
-				} });
+							if (!--OverflowCountA) {
+								if (--RepeatLeft > 1) {
+									OverflowCountB = OverflowTarget;
+									OCRB += OcrTarget;
+								}
+								else
+									TIMSK &= ~(1 << OCIE1B);
+								DoB();
+								if (!RepeatLeft)
+									_TOFA_ThisReference(DoneCallback)();
+							} });
 		}
 		else
 		{
 			const uint8_t BitShift = _Prescaler01::BitShifts[TCCRB];
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCRB = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [this, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPB = &(HandlerB = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK &= ~(1 << OCIE1B);
-			DoA();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--RepeatLeft < 2)
+						TIMSK &= ~(1 << OCIE1B);
+					DoA();
+					if (!RepeatLeft)
+						_TOFA_ThisReference(DoneCallback)(); });
 			OCRA = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [this, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK &= ~(1 << OCIE1A);
-			DoB();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--RepeatLeft < 2)
+						TIMSK &= ~(1 << OCIE1A);
+					DoB();
+					if (!RepeatLeft)
+						_TOFA_ThisReference(DoneCallback)(); });
 			TCCRB |= 1 << WGM12;
 		}
 		RepeatLeft = NumHalfPeriods;
@@ -279,12 +281,12 @@ void TimerClass2::DoAfter(Tick After, std::move_only_function<void() const> _TOF
 	OverflowCountA = _PrescalerOverflow<_Prescaler2>(After.count() >> 8, TCCR2B) + 1;
 	TCCR2A = 0;
 	OCR2A = After.count() >> _Prescaler2::BitShifts[TCCR2B];
-	_COMPA = &(HandlerA = [&OverflowCount = OverflowCountA, _TOFA_Capture(Do)]()
+	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]()
 			   {
-	if (!--OverflowCount) {
-		TIMSK2 = 0;
-		Do();
-	} });
+			if (!--HardwareTimer2.OverflowCountA) {
+				TIMSK2 = 0;
+				Do();
+			} });
 	TCNT2 = 0;
 	TIFR2 = -1;
 	TIMSK2 = 1 << OCIE2A;
@@ -300,33 +302,33 @@ void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			TCCR2A = 0;
 			OCR2A = OcraTarget;
 			OverflowCountA = ++OverflowTarget;
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget, this]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft) {
-					OverflowCountA = OverflowTarget;
-					OCR2A += OcraTarget;
-				}
-				else
-					TIMSK2 = 0;
-				// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-				Do();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--HardwareTimer2.OverflowCountA) {
+						if (--HardwareTimer2.RepeatLeft) {
+							HardwareTimer2.OverflowCountA = OverflowTarget;
+							OCR2A += OcraTarget;
+						}
+						else
+							TIMSK2 = 0;
+						// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+						Do();
+						if (!HardwareTimer2.RepeatLeft)
+							DoneCallback();
+					} });
 		}
 		else
 		{
 			TCCR2A = 1 << WGM21;
 			OCR2A = Every.count() >> _Prescaler2::BitShifts[TCCR2B];
-			_COMPA = &(HandlerA = [&RepeatLeft = RepeatLeft, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 					   {
-			if (!--RepeatLeft)
-				TIMSK2 = 0;
-			// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
-			Do();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (!--HardwareTimer2.RepeatLeft)
+						TIMSK2 = 0;
+					// 计时器配置必须放在前面，然后才能执行动作。因为用户自定义动作可能包含计时器配置，如果放前面会被覆盖掉。
+					Do();
+					if (!HardwareTimer2.RepeatLeft)
+						DoneCallback(); });
 		}
 		RepeatLeft = RepeatTimes;
 		TCNT2 = 0;
@@ -342,40 +344,41 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 	{
 		TIMSK2 = 0;
 		AfterB += AfterA;
+		_TOFA_PublicCache(DoneCallback);
 		if (uint32_t OverflowTarget = _PrescalerOverflow<_Prescaler2>(AfterB.count() >> 8, TCCR2B))
 		{
 			TCCR2A = 0;
 			OCR2A = AfterA.count() >> _Prescaler2::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler2::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> _Prescaler2::MaxShift;
-			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (!--OverflowCountA) {
-				if (--RepeatLeft > 1) {
-					OverflowCountA = OverflowTarget;
-					OCR2A += OcrTarget;
-				}
-				else
-					TIMSK2 &= ~(1 << OCIE2A);
-				DoA();
-				if (!RepeatLeft)
-					DoneCallback();
-			} });
+					if (!--HardwareTimer2.OverflowCountA) {
+						if (--HardwareTimer2.RepeatLeft > 1) {
+							HardwareTimer2.OverflowCountA = OverflowTarget;
+							OCR2A += OcrTarget;
+						}
+						else
+							TIMSK2 &= ~(1 << OCIE2A);
+						DoA();
+						if (!HardwareTimer2.RepeatLeft)
+							_TOFA_SingletonReference(HardwareTimer2, DoneCallback)();
+					} });
 			OverflowCountB = OverflowTarget;
 			OCR2B = OcrTarget;
-			_COMPB = &(HandlerB = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-				if (!--OverflowCountA) {
-					if (--RepeatLeft > 1) {
-						OverflowCountB = OverflowTarget;
-						OCR2B += OcrTarget;
-					}
-					else
-						TIMSK2 &= ~(1 << OCIE2B);
-					DoB();
-					if (!RepeatLeft)
-						DoneCallback();
-				} });
+							if (!--HardwareTimer2.OverflowCountA) {
+								if (--HardwareTimer2.RepeatLeft > 1) {
+									HardwareTimer2.OverflowCountB = OverflowTarget;
+									OCR2B += OcrTarget;
+								}
+								else
+									TIMSK2 &= ~(1 << OCIE2B);
+								DoB();
+								if (!HardwareTimer2.RepeatLeft)
+									_TOFA_SingletonReference(HardwareTimer2, DoneCallback)();
+							} });
 		}
 		else
 		{
@@ -383,21 +386,21 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			TCCR2A = 1 << WGM21;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR2B = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [&RepeatLeft = RepeatLeft, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK2 &= ~(1 << OCIE2B);
-			DoA();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--HardwareTimer2.RepeatLeft < 2)
+						TIMSK2 &= ~(1 << OCIE2B);
+					DoA();
+					if (!HardwareTimer2.RepeatLeft)
+						_TOFA_SingletonReference(HardwareTimer2, DoneCallback)(); });
 			OCR2A = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [&RepeatLeft = RepeatLeft, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 					   {
-			if (--RepeatLeft < 2)
-				TIMSK2 &= ~(1 << OCIE2A);
-			DoB();
-			if (!RepeatLeft)
-				DoneCallback(); });
+					if (--HardwareTimer2.RepeatLeft < 2)
+						TIMSK2 &= ~(1 << OCIE2A);
+					DoB();
+					if (!HardwareTimer2.RepeatLeft)
+						_TOFA_SingletonReference(HardwareTimer2, DoneCallback)(); });
 		}
 		RepeatLeft = NumHalfPeriods;
 		TCNT2 = 0;
@@ -417,7 +420,7 @@ void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void() const>
 	SysTick->VAL = 0;
 	uint64_t TimeTicks = After.count();
 	uint32_t CTRL = _SysTick_CTRL_MCK;
-	Do = [_TOFA_Capture(Do)]()
+	HandlerA = [_TOFA_Capture(Do)]()
 	{
 		SysTick->CTRL = 0;
 		Do();
@@ -427,10 +430,10 @@ void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void() const>
 		TimeTicks >>= 3;
 		if (OverflowCount = TimeTicks >> 24)
 		{
-			_Handler = &(HandlerA = [_TOFA_Capture(Do)]()
+			_Handler = &(HandlerB = []()
 						 {
-			if (!--SystemTimer.OverflowCount)
-				SystemTimer._Handler = &Do; });
+					if (!--SystemTimer.OverflowCount)
+						SystemTimer._Handler = &SystemTimer.HandlerA; });
 			SysTick->LOAD = TimeTicks;
 			SysTick->CTRL = _SysTick_CTRL_MCK8;
 			while (!SysTick->VAL)
@@ -440,7 +443,7 @@ void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void() const>
 		}
 		CTRL = _SysTick_CTRL_MCK8;
 	}
-	_Handler = _TOFA_DirectHandler;
+	_Handler = &HandlerA;
 	SysTick->LOAD = TimeTicks;
 	SysTick->CTRL = CTRL;
 }
@@ -463,21 +466,21 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() co
 				OverflowCount = OverflowTarget;
 				_Handler = &(HandlerA = [_TOFA_Capture(Do), OverflowTarget, LOAD, _TOFA_Capture(DoneCallback)]()
 							 {
-				switch (--SystemTimer.OverflowCount) {
-				case 0:
-					if (--SystemTimer.RepeatLeft) {
-						SysTick->LOAD = -1;
-						SystemTimer.OverflowCount = OverflowTarget;
-					}
-					else
-						SysTick->CTRL = 0;
-					Do();
-					if (!SystemTimer.RepeatLeft)
-						DoneCallback();
-					break;
-				case 1:
-					SysTick->LOAD = LOAD;
-				} });
+						switch (--SystemTimer.OverflowCount) {
+						case 0:
+							if (--SystemTimer.RepeatLeft) {
+								SysTick->LOAD = -1;
+								SystemTimer.OverflowCount = OverflowTarget;
+							}
+							else
+								SysTick->CTRL = 0;
+							Do();
+							if (!SystemTimer.RepeatLeft)
+								DoneCallback();
+							break;
+						case 1:
+							SysTick->LOAD = LOAD;
+						} });
 				SysTick->LOAD = LOAD;
 				SysTick->CTRL = _SysTick_CTRL_MCK8;
 				while (!SysTick->VAL)
@@ -489,11 +492,11 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() co
 		}
 		_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 					 {
-		if (!--SystemTimer.RepeatLeft)
-			SysTick->CTRL = 0;
-		Do();
-		if (!SystemTimer.RepeatLeft)
-			DoneCallback(); });
+				if (!--SystemTimer.RepeatLeft)
+					SysTick->CTRL = 0;
+				Do();
+				if (!SystemTimer.RepeatLeft)
+					DoneCallback(); });
 		SysTick->LOAD = TimeTicks;
 		SysTick->CTRL = CTRL;
 	}
@@ -510,6 +513,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 		uint64_t TimeTicksB = AfterB.count();
 		uint32_t CTRL = _SysTick_CTRL_MCK;
 		SysTick->LOAD = -1;
+		_TOFA_PublicCache(DoneCallback);
 		if (max(TimeTicksA, TimeTicksB) >> 24)
 		{
 			TimeTicksA >>= 3;
@@ -526,7 +530,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 					if (OverflowTargetB)
 					{
 						OverflowTargetB++;
-						HandlerA = [TicksLeftB, OverflowTargetB, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+						HandlerA = [TicksLeftB, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -541,13 +545,13 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 									SysTick->CTRL = 0;
 								DoA();
 								if (!SystemTimer.RepeatLeft)
-									DoneCallback();
+									_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 								break;
 							case 1:
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						HandlerB = [TicksLeftA, OverflowTargetA, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+						HandlerB = [TicksLeftA, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -562,7 +566,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 									SysTick->CTRL = 0;
 								DoB();
 								if (!SystemTimer.RepeatLeft)
-									DoneCallback();
+									_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 								break;
 							case 1:
 								SysTick->LOAD = TicksLeftA;
@@ -571,7 +575,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 					}
 					else
 					{
-						HandlerA = [TicksLeftB, TicksLeftA, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+						HandlerA = [TicksLeftB, TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -585,13 +589,13 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 									SysTick->CTRL = 0;
 								DoA();
 								if (!SystemTimer.RepeatLeft)
-									DoneCallback();
+									_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 								break;
 							case 1:
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						HandlerB = [OverflowTargetA, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+						HandlerB = [OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 						{
 							if (--SystemTimer.RepeatLeft)
 							{
@@ -603,13 +607,13 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 								SysTick->CTRL = 0;
 							DoB();
 							if (!SystemTimer.RepeatLeft)
-								DoneCallback();
+								_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 						};
 					}
 				}
 				else
 				{
-					HandlerA = [OverflowTargetB, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+					HandlerA = [OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					{
 						if (--SystemTimer.RepeatLeft)
 						{
@@ -621,9 +625,9 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 							SysTick->CTRL = 0;
 						DoA();
 						if (!SystemTimer.RepeatLeft)
-							DoneCallback();
+							_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 					};
-					HandlerB = [TicksLeftA, TicksLeftB, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+					HandlerB = [TicksLeftA, TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 					{
 						switch (--SystemTimer.OverflowCount)
 						{
@@ -637,7 +641,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 								SysTick->CTRL = 0;
 							DoB();
 							if (!SystemTimer.RepeatLeft)
-								DoneCallback();
+								_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 							break;
 						case 1:
 							SysTick->LOAD = TicksLeftA;
@@ -656,18 +660,18 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 		}
 		const uint32_t TicksLeftA = TimeTicksA;
 		const uint32_t TicksLeftB = TimeTicksB;
-		_Handler = &(HandlerA = [TicksLeftA, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+		_Handler = &(HandlerA = [TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					 {
-		if (--SystemTimer.RepeatLeft) {
-			SysTick->LOAD = TicksLeftA;
-			SystemTimer._Handler = &SystemTimer.HandlerB;
-		}
-		else
-			SysTick->CTRL = 0;
-		DoA();
-		if (!SystemTimer.RepeatLeft)
-			DoneCallback(); });
-		HandlerB = [TicksLeftB, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+				if (--SystemTimer.RepeatLeft) {
+					SysTick->LOAD = TicksLeftA;
+					SystemTimer._Handler = &SystemTimer.HandlerB;
+				}
+				else
+					SysTick->CTRL = 0;
+				DoA();
+				if (!SystemTimer.RepeatLeft)
+					_TOFA_SingletonReference(SystemTimer, DoneCallback)(); });
+		HandlerB = [TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 		{
 			if (--SystemTimer.RepeatLeft)
 			{
@@ -678,7 +682,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 				SysTick->CTRL = 0;
 			DoB();
 			if (!SystemTimer.RepeatLeft)
-				DoneCallback();
+				_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 		};
 		SysTick->LOAD = TicksLeftA;
 		SysTick->CTRL = CTRL;
@@ -694,7 +698,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 void RealTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
 {
 	RTT->RTT_MR = 0;
-	Do = [_TOFA_Capture(Do)]()
+	HandlerA = [_TOFA_Capture(Do)]()
 	{
 		RealTimer._Handler = nullptr;
 		RTT->RTT_MR = 0;
@@ -709,10 +713,10 @@ void RealTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _
 		if (OverflowCount = RTPRES >> 16)
 		{
 			RTT->RTT_AR = TimerTicks >> 16;
-			_Handler = &(HandlerA = [_TOFA_Capture(Do)]()
+			_Handler = &(HandlerB = []()
 						 {
-			if (!--RealTimer.OverflowCount)
-				Do(); });
+					if (!--RealTimer.OverflowCount)
+						RealTimer.HandlerA(); });
 			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 			return;
 		}
@@ -727,7 +731,7 @@ void RealTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _
 		RTT->RTT_AR = TimerTicks;
 		RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 	}
-	_Handler = _TOFA_DirectHandler;
+	_Handler = &HandlerA;
 }
 void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
 {
@@ -744,20 +748,20 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 				OverflowCount = ++OverflowTarget;
 				_Handler = &(HandlerA = [_TOFA_Capture(Do), RTT_AR, OverflowTarget, _TOFA_Capture(DoneCallback)]()
 							 {
-				if (!--RealTimer.OverflowCount) {
-					if (--RealTimer.RepeatLeft) {
-						RTT->RTT_AR = RTT_AR; // 伪暂停算法可能修改AR，所以每次都要重新设置
-						RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
-						RealTimer.OverflowCount = OverflowTarget;
-					}
-					else {
-						RTT->RTT_MR = 0;
-						RealTimer._Handler = nullptr;
-					}
-					Do();
-					if (!RealTimer.RepeatLeft)
-						DoneCallback();
-				} });
+						if (!--RealTimer.OverflowCount) {
+							if (--RealTimer.RepeatLeft) {
+								RTT->RTT_AR = RTT_AR; // 伪暂停算法可能修改AR，所以每次都要重新设置
+								RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
+								RealTimer.OverflowCount = OverflowTarget;
+							}
+							else {
+								RTT->RTT_MR = 0;
+								RealTimer._Handler = nullptr;
+							}
+							Do();
+							if (!RealTimer.RepeatLeft)
+								DoneCallback();
+						} });
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST;
 			}
 			else
@@ -766,13 +770,13 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
 				_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 							 {
-				if (!--RealTimer.RepeatLeft) {
-					RTT->RTT_MR = 0;
-					RealTimer._Handler = nullptr;
-				}
-				Do();
-				if (!RealTimer.RepeatLeft)
-					DoneCallback(); });
+						if (!--RealTimer.RepeatLeft) {
+							RTT->RTT_MR = 0;
+							RealTimer._Handler = nullptr;
+						}
+						Do();
+						if (!RealTimer.RepeatLeft)
+							DoneCallback(); });
 			}
 		}
 		else
@@ -781,15 +785,15 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 			RTT->RTT_AR = RTT_AR;
 			_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), RTT_AR]()
 						 {
-			if (--RealTimer.RepeatLeft)
-				RTT->RTT_AR += RTT_AR;
-			else {
-				RTT->RTT_MR = 0;
-				RealTimer._Handler = nullptr;
-			}
-			Do();
-			if (!RealTimer.RepeatLeft)
-				DoneCallback(); });
+					if (--RealTimer.RepeatLeft)
+						RTT->RTT_AR += RTT_AR;
+					else {
+						RTT->RTT_MR = 0;
+						RealTimer._Handler = nullptr;
+					}
+					Do();
+					if (!RealTimer.RepeatLeft)
+						DoneCallback(); });
 			RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | 1;
 		}
 		RepeatLeft = RepeatTimes;
@@ -816,6 +820,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 		while (RTT->RTT_SR)
 			;
 		NVIC_EnableIRQ(RTT_IRQn);
+		_TOFA_PublicCache(DoneCallback);
 		if (RTPRES)
 		{
 			if (RTPRES >> 16)
@@ -827,23 +832,23 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 				OverflowCount = OverflowTargetA;
 				const uint16_t OverflowTargetB = (TimerTicksB >> 48) + 1;
 				RTT_AR_B = TimerTicksB >> 16;
-				_Handler = &(HandlerA = [OverflowTargetB, RTT_AR_B, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+				_Handler = &(HandlerA = [OverflowTargetB, RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 							 {
-				if (!--RealTimer.OverflowCount) {
-					if (--RealTimer.RepeatLeft) {
-						RealTimer.OverflowCount += OverflowTargetB;
-						RTT->RTT_AR += RTT_AR_B;
-						RealTimer._Handler = &RealTimer.HandlerB;
-					}
-					else {
-						RTT->RTT_MR = 0;
-						RealTimer._Handler = nullptr;
-					}
-					DoA();
-					if (!RealTimer.RepeatLeft)
-						DoneCallback();
-				} });
-				HandlerB = [OverflowTargetA, RTT_AR_A, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+						if (!--RealTimer.OverflowCount) {
+							if (--RealTimer.RepeatLeft) {
+								RealTimer.OverflowCount += OverflowTargetB;
+								RTT->RTT_AR += RTT_AR_B;
+								RealTimer._Handler = &RealTimer.HandlerB;
+							}
+							else {
+								RTT->RTT_MR = 0;
+								RealTimer._Handler = nullptr;
+							}
+							DoA();
+							if (!RealTimer.RepeatLeft)
+								_TOFA_SingletonReference(RealTimer, DoneCallback)();
+						} });
+				HandlerB = [OverflowTargetA, RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 				{
 					if (!--RealTimer.OverflowCount)
 					{
@@ -860,7 +865,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 						}
 						DoB();
 						if (!RealTimer.RepeatLeft)
-							DoneCallback();
+							_TOFA_SingletonReference(RealTimer, DoneCallback)();
 					}
 				};
 				RTT->RTT_MR = RTT_MR;
@@ -877,20 +882,20 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 			RTT_AR_B = TimerTicksB;
 		}
 		RTT->RTT_AR = RTT_AR_A;
-		_Handler = &(HandlerA = [RTT_AR_B, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+		_Handler = &(HandlerA = [RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
 					 {
-		if (--RealTimer.RepeatLeft) {
-			RTT->RTT_AR += RTT_AR_B;
-			RealTimer._Handler = &RealTimer.HandlerB;
-		}
-		else {
-			RTT->RTT_MR = 0;
-			RealTimer._Handler = nullptr;
-		}
-		DoA();
-		if (!RealTimer.RepeatLeft)
-			DoneCallback(); });
-		HandlerB = [RTT_AR_A, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+				if (--RealTimer.RepeatLeft) {
+					RTT->RTT_AR += RTT_AR_B;
+					RealTimer._Handler = &RealTimer.HandlerB;
+				}
+				else {
+					RTT->RTT_MR = 0;
+					RealTimer._Handler = nullptr;
+				}
+				DoA();
+				if (!RealTimer.RepeatLeft)
+					_TOFA_SingletonReference(RealTimer, DoneCallback)(); });
+		HandlerB = [RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
 		{
 			if (--RealTimer.RepeatLeft)
 			{
@@ -904,7 +909,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 			}
 			DoB();
 			if (!RealTimer.RepeatLeft)
-				DoneCallback();
+				_TOFA_SingletonReference(RealTimer, DoneCallback)();
 		};
 		RTT->RTT_MR = RTT_MR;
 	}
@@ -935,11 +940,11 @@ void PeripheralTimerClass::DoAfter(Tick After, std::move_only_function<void() co
 			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 			_Handler = &(HandlerA = [this, _TOFA_Capture(Do)]
 						 {
-			// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
-			if (!--OverflowCount) {
-				Channel.TC_CMR |= TC_CMR_CPCDIS;
-				_Handler = &Do;
-			} });
+					// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
+					if (!--OverflowCount) {
+						Channel.TC_CMR |= TC_CMR_CPCDIS;
+						_Handler = &Do;
+					} });
 		}
 	}
 	Channel.TC_CMR = TC_CMR_WAVSEL_UP | TC_CMR_CPCDIS | TC_CMR_WAVE | TCCLKS;
@@ -957,8 +962,8 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 		// 重复1次需要特殊处理，因为会导致CPCDIS不可用
 		DoAfter(Every, [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
 				{
-		Do();
-		DoneCallback(); });
+				Do();
+				DoneCallback(); });
 		break;
 	default:
 		Channel.TC_IDR = -1;
@@ -985,30 +990,31 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 				OverflowTarget++;
 				_Handler = &(HandlerA = [this, TC_RC, OverflowTarget, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]
 							 {
-				if (!--OverflowCount) {
-					if (--RepeatLeft) {
-						OverflowCount = OverflowTarget;
-						Channel.TC_RC += TC_RC;
-					}
-					else
-						Channel.TC_CCR = TC_CCR_CLKDIS;
-					Do();
-					if (!RepeatLeft)
-						DoneCallback();
-				} });
+						if (!--OverflowCount) {
+							if (--RepeatLeft) {
+								OverflowCount = OverflowTarget;
+								Channel.TC_RC += TC_RC;
+							}
+							else
+								Channel.TC_CCR = TC_CCR_CLKDIS;
+							Do();
+							if (!RepeatLeft)
+								DoneCallback();
+						} });
 				Channel.TC_IER = TC_IER_CPCS;
 				return;
 			}
 		}
 		Channel.TC_CMR = TC_CMR_WAVSEL_UP_RC | TC_CMR_WAVE | TCCLKS;
-		_Handler = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+		_TOFA_PublicCache(Do);
+		_Handler = &(HandlerA = [this _TOFA_ThisCapture(Do)]()
 					 {
-		if (--RepeatLeft == 1) {
-			Channel.TC_CMR |= TC_CMR_CPCDIS;
-			_Handler = &HandlerB;
-		}
-		Do(); });
-		HandlerB = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+				if (--RepeatLeft == 1) {
+					Channel.TC_CMR |= TC_CMR_CPCDIS;
+					_Handler = &HandlerB;
+				}
+				_TOFA_ThisReference(Do)(); });
+		HandlerB = [_TOFA_Capture(DoneCallback) _TOFA_SelfCapture(Do)]()
 		{
 			Do();
 			DoneCallback();
@@ -1027,8 +1033,8 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 		// 重复1次需要特殊处理，因为会导致CPCDIS不可用
 		DoAfter(AfterA, [_TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
 				{
-		DoA();
-		DoneCallback(); });
+				DoA();
+				DoneCallback(); });
 		break;
 	default:
 		Channel.TC_IDR = -1;
@@ -1038,6 +1044,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 		uint32_t TCCLKS = PeriodTick.count() >> 32;
 		TCCLKS = TCCLKS ? sizeof(TCCLKS) * 8 - 1 - __builtin_clz(TCCLKS) : 0; // TCCLKS为0时需要避免下溢
 		RepeatLeft = NumHalfPeriods;
+		_TOFA_PublicCache(DoneCallback);
 		if (TCCLKS < (TC_CMR_TCCLKS_TIMER_CLOCK4 << 1) + 1)
 		{
 			// 必须保证不溢出
@@ -1060,21 +1067,21 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 				Channel.TC_RC = TC_RC_A;
 				const uint32_t OverflowTargetB = TimeTicksB >> 32;
 				const uint32_t TC_RC_B = TimeTicksB;
-				_Handler = &(HandlerA = [this, TC_RC_B, OverflowTargetB, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]
+				_Handler = &(HandlerA = [this, TC_RC_B, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]
 							 {
-				if (!--OverflowCount) {
-					if (--RepeatLeft) {
-						OverflowCount = OverflowTargetB;
-						Channel.TC_RC += TC_RC_B;
-						_Handler = &HandlerB;
-					}
-					else
-						Channel.TC_CCR = TC_CCR_CLKDIS;
-					DoA();
-					if (!RepeatLeft)
-						DoneCallback();
-				} });
-				HandlerB = [this, TC_RC_A, OverflowTargetA, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]
+						if (!--OverflowCount) {
+							if (--RepeatLeft) {
+								OverflowCount = OverflowTargetB;
+								Channel.TC_RC += TC_RC_B;
+								_Handler = &HandlerB;
+							}
+							else
+								Channel.TC_CCR = TC_CCR_CLKDIS;
+							DoA();
+							if (!RepeatLeft)
+								_TOFA_ThisReference(DoneCallback)();
+						} });
+				HandlerB = [this, TC_RC_A, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]
 				{
 					if (!--OverflowCount)
 					{
@@ -1088,7 +1095,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 							Channel.TC_CCR = TC_CCR_CLKDIS;
 						DoB();
 						if (!RepeatLeft)
-							DoneCallback();
+							_TOFA_ThisReference(DoneCallback)();
 					}
 				};
 				Channel.TC_IER = TC_IER_CPCS;
@@ -1099,16 +1106,16 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 			Channel.TC_RC = PeriodSlow;
 		}
 		Channel.TC_CMR = TC_CMR_WAVSEL_UP_RC | TC_CMR_WAVE | TCCLKS;
-		_Handler = &(HandlerA = [this, _TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+		_Handler = &(HandlerA = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
 					 {
-		if (--RepeatLeft)
-			_Handler = &HandlerB;
-		else
-			Channel.TC_CCR = TC_CCR_CLKDIS;
-		DoA();
-		if (!RepeatLeft)
-			DoneCallback(); });
-		HandlerB = [this, _TOFA_Capture(DoB), _TOFA_Capture(DoneCallback)]()
+				if (--RepeatLeft)
+					_Handler = &HandlerB;
+				else
+					Channel.TC_CCR = TC_CCR_CLKDIS;
+				DoA();
+				if (!RepeatLeft)
+					_TOFA_ThisReference(DoneCallback)(); });
+		HandlerB = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
 		{
 			if (--RepeatLeft)
 				_Handler = &HandlerA;
@@ -1116,7 +1123,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 				Channel.TC_CCR = TC_CCR_CLKDIS;
 			DoB();
 			if (!RepeatLeft)
-				DoneCallback();
+				_TOFA_ThisReference(DoneCallback)();
 		};
 		Channel.TC_IER = TC_IER_CPAS | TC_IER_CPCS;
 	}
