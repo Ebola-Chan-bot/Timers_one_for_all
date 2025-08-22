@@ -5,6 +5,7 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
+	extern std::move_only_function<void()> const _DoNothing;
 	// 枚举可用的计时器
 	enum class TimerEnum
 	{
@@ -93,8 +94,8 @@ namespace Timers_one_for_all
 		}
 		// 终止计时器并设为空闲。一旦终止，任务将不能恢复。此操作不会改变计时器是否接受自动分配的状态。如果需要用新任务覆盖计时器上正在执行的其它任务，可以直接布置那个任务而无需先Stop。Stop确保上次布置任务的中断处理代码不再被执行，但不会还原已被任务修改的全局状态（如全局变量、引脚电平等）。
 		virtual void Stop() const = 0;
-		const std::move_only_function<void() const> *_COMPA;
-		const std::move_only_function<void() const> *_COMPB;
+		std::move_only_function<void()> *_COMPA;
+		std::move_only_function<void()> *_COMPB;
 #endif
 #ifdef ARDUINO_ARCH_SAM
 		// 暂停计时器，使其相关功能暂时失效，但可以用Continue恢复，不会将计时器设为空闲。暂停一个已暂停的计时器将不做任何事。
@@ -105,7 +106,7 @@ namespace Timers_one_for_all
 		virtual void Stop() = 0;
 
 		// 当前正在工作的处理函数指针。为nullptr表示没有正在工作的处理函数。
-		std::move_only_function<void() const> const *_Handler = nullptr;
+		std::move_only_function<void()> *_Handler = nullptr;
 #endif
 		// 检查计时器是否忙碌。暂停的计时器也属于忙碌。忙碌的计时器也可能被自动分配，应以Allocatable的返回值为准
 		virtual bool Busy() const = 0;
@@ -134,9 +135,9 @@ namespace Timers_one_for_all
 
 		// 供派生类实现用的通用缓存位置
 
-		std::move_only_function<void() const> HandlerA;
-		std::move_only_function<void() const> HandlerB;
-		std::move_only_function<void() const> PublicCache;
+		std::move_only_function<void()> HandlerA;
+		std::move_only_function<void()> HandlerB;
+		std::move_only_function<void()> PublicCache;
 #ifdef ARDUINO_ARCH_AVR
 		uint8_t Clock;
 		uint32_t OverflowCountA;
@@ -151,17 +152,19 @@ namespace Timers_one_for_all
 		uint64_t RepeatLeft;
 		virtual Tick _GetTiming() const = 0;
 		virtual void Delay(Tick) = 0;
-#define _TOFA_Reference const &
+#define _TOFA_Reference &
 #define _TOFA_StdMove(Object) Object
+#define _TOFA_DoNothing _DoNothing
 #include "_TOFA_RTO_Declare.hpp"
 #define _TOFA_Reference &&
 #define _TOFA_StdMove(Object) std::move(Object)
+#define _TOFA_DoNothing [] {}
 #include "_TOFA_RTO_Declare.hpp"
 	};
-#define _TOFA_OverrideDeclare(Reference)                                                                                                                                           \
-	void DoAfter(Tick After, std::move_only_function<void() const> Reference Do) override;                                                                                         \
-	void RepeatEvery(Tick Every, std::move_only_function<void() const> Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> Reference DoneCallback) override; \
-	void DoubleRepeat(Tick AfterA, std::move_only_function<void() const> Reference DoA, Tick AfterB, std::move_only_function<void() const> Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> Reference DoneCallback) override;
+#define _TOFA_OverrideDeclare(Reference)                                                                                                                               \
+	void DoAfter(Tick After, std::move_only_function<void()> Reference Do) override;                                                                                   \
+	void RepeatEvery(Tick Every, std::move_only_function<void()> Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> Reference DoneCallback) override; \
+	void DoubleRepeat(Tick AfterA, std::move_only_function<void()> Reference DoA, Tick AfterB, std::move_only_function<void()> Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> Reference DoneCallback) override;
 #ifdef ARDUINO_ARCH_AVR
 #define _MMIO_BYTE(mem_addr) mem_addr
 #define _MMIO_WORD(mem_addr) mem_addr
@@ -179,7 +182,7 @@ namespace Timers_one_for_all
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 	} HardwareTimer0;
 #endif
 	struct TimerClass1 : TimerClass
@@ -189,7 +192,7 @@ namespace Timers_one_for_all
 		void Stop() const override;
 		void StartTiming() override;
 		void RefreshTiming() const override;
-		const std::move_only_function<void() const> *_OVF;
+		std::move_only_function<void()> *_OVF;
 
 	protected:
 		_RuntimeReference<uint8_t> const TCCRA;
@@ -201,7 +204,7 @@ namespace Timers_one_for_all
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 	};
 #ifdef TOFA_TIMER1
 	// 1号计时器
@@ -216,13 +219,13 @@ namespace Timers_one_for_all
 		void Stop() const override;
 		void StartTiming() override;
 		void RefreshTiming() const override;
-		const std::move_only_function<void() const> *_OVF;
+		std::move_only_function<void()> *_OVF;
 
 	protected:
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 	} HardwareTimer2;
 #endif
 #ifdef TOFA_TIMER3
@@ -278,7 +281,7 @@ namespace Timers_one_for_all
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 	} SystemTimer;
 #endif
 #ifdef TOFA_REALTIMER
@@ -296,7 +299,7 @@ namespace Timers_one_for_all
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 	} RealTimer;
 #endif
 	enum class _PeripheralEnum
@@ -350,7 +353,7 @@ namespace Timers_one_for_all
 		Tick _GetTiming() const override;
 		void Delay(Tick) override;
 		_TOFA_OverrideDeclare(&&);
-		_TOFA_OverrideDeclare(const &);
+		_TOFA_OverrideDeclare(&);
 		void Initialize();
 	} PeripheralTimers[static_cast<size_t>(_PeripheralEnum::NumPeripherals)];
 	// 所有可用的硬件计时器。此数组可用TimerEnum转换为size_t索引以获取对应指针。所有计时器默认接受自动分配。

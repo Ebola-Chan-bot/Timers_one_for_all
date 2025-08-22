@@ -96,27 +96,39 @@ void Delay(T Duration);
 
 // 在After时间后执行Do。不同于Delay，此方法不会阻塞当前线程，而是在指定时间后发起新的中断线程来执行任务。此方法一定会覆盖计时器的上一个任务，即使延时为0。
 template <typename T>
-void DoAfter(T After, std::move_only_function<void() const>&& Do);
+void DoAfter(T After, std::move_only_function<void()>&& Do);
+template <typename T>
+void DoAfter(T After, std::move_only_function<void()>& Do);
 
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。可选额外指定重复次数（默认无限重复）和所有重复结束后立即执行的回调。如果重复次数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
-void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
+void RepeatEvery(T Every, std::move_only_function<void()>&& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void()>&& DoneCallback = []() {});
+template <typename T>
+void RepeatEvery(T Every, std::move_only_function<void()>& Do, uint64_t RepeatTimes = InfiniteRepeat, std::move_only_function<void()>& DoneCallback = _DoNothing);
 
 // 每隔指定时间就重复执行任务，第一次执行也在指定时间之后。在指定的持续时间结束后执行回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
-void RepeatEvery(T Every, std::move_only_function<void() const>&& Do, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);
+void RepeatEvery(T Every, std::move_only_function<void()>&& Do, T RepeatDuration);
+template <typename T>
+void RepeatEvery(T Every, std::move_only_function<void()>& Do, T RepeatDuration);
 
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定半周期数（即NumHalfPeriods为DoA和DoB被执行的次数之和，如果指定为奇数则DoA会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果重复半周期数为0，此方法立即执行DoneCallback，不会覆盖计时器的上一个任务。
 template <typename T>
-void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void() const>&& DoneCallback = []() {});
+void DoubleRepeat(T AfterA, std::move_only_function<void()>&& DoA, T AfterB, std::move_only_function<void()>&& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void()>&& DoneCallback = []() {});
+template <typename T>
+void DoubleRepeat(T AfterA, std::move_only_function<void()>& DoA, T AfterB, std::move_only_function<void()>& DoB, uint64_t NumHalfPeriods = InfiniteRepeat, std::move_only_function<void()>& DoneCallback = _DoNothing);
 
 // 先在AfterA之后DoA，再在AfterB之后DoB，如此循环指定时长（时间到后立即停止，因此DoA可能会比DoB多执行一次）。所有循环完毕后，可选执行一个回调。如果指定了DoneCallback，一定会覆盖计时器的上一个任务，即使持续时间为0。
 template <typename T>
-void DoubleRepeat(T AfterA, std::move_only_function<void() const>&& DoA, T AfterB, std::move_only_function<void() const>&& DoB, T RepeatDuration, std::move_only_function<void() const>&& DoneCallback = nullptr);
+void DoubleRepeat(T AfterA, std::move_only_function<void()>&& DoA, T AfterB, std::move_only_function<void()>&& DoB, T RepeatDuration);
+template <typename T>
+void DoubleRepeat(T AfterA, std::move_only_function<void()>& DoA, T AfterB, std::move_only_function<void()>& DoB, T RepeatDuration);
 ```
 所有时间参数都必须是`std::chrono::duration`的特化类型。一个函数中有多个时间参数的，那些参数必须是相同的特化类型。不同的特化类型可以用`std::chrono_duration_cast`相互转换。建议`using namespace std::chrono_literals`以使用更优雅的`duration`字面量。
 
-绝大多数简单应用场景下，所有的`std::move_only_function<void()const>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()const>&&`将会被移动构造而转移所有权，原对象将处于未指明状态。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。此外需注意，如果输入的可调用对象在调用时会更改本计时器绑定的可调用对象，这意味着该对象的行为会析构对象自身，则此析构行为之后不得再访问对象自身的资源，因为可能已经被释放。例如：
+对于`RepeatEvery`和`DoubleRepeat`，如果采用指定总持续时长的语法，则不支持指定`DoneCallback`。原因之一是此种语法存在歧义：`DoneCallback`究竟应该在持续时间内最后一次重复后立即执行，还是一定要等到持续时间结束后再执行？如果你需要执行`DoneCallback`，请手动计算重复次数。对于`RepeatEvery`，重复次数为`RepeatDuration / Every`；对于`DoubleRepeat`，重复次数为`RepeatDuration / (AfterA + AfterB) * 2 + RepeatDuration % (AfterA + AfterB) / AfterA`
+
+绝大多数简单应用场景下，所有的`std::move_only_function<void()>&&`实参都可以指定为（非成员）函数指针或一个临时的λ表达式。对于复杂场景，特别是涉及特殊资源的管理和释放时，需要注意输入的`std::move_only_function<void()>&&`将会被移动构造而转移所有权，原对象将处于未指明状态。对象直到被新任务覆盖前都不会自动析构，拥有的资源不会释放。如果这不是预期的行为，应当仅移交资源的引用，然后另外手动管理资源释放。此外需注意，如果输入的可调用对象在调用时会更改本计时器绑定的可调用对象，这意味着该对象的行为会析构对象自身，则此析构行为之后不得再访问对象自身的资源，因为可能已经被释放。例如：
 ```C++
 TimerClass *Timer = AllocateTimer();
 uint8_t a = 0;
@@ -130,6 +142,8 @@ Timer->DoAfter(1s, [&a, Timer]()
 			   });
 ```
 上述代码不是100%会出错，但在特定条件下将成为难以排查的bug来源。建议的做法是始终将覆盖本计时器任务作为函数返回前的最后一步操作。
+
+如果需要自行管理生命周期（不交所有权），可使用左值引用重载。
 
 任务结束后，一般应当释放计时器，使其再次接受自动分配。但若使用unique_ptr则可以借助RAII机制自动释放计时器，而无需手动管理。
 ```C++
@@ -161,3 +175,8 @@ Timer->Allocatable = true;
 为了适应各种可能的计时器争用环境，唯一的解决方法就是由用户通过宏定义来指明本库应当定义哪些中断处理函数。由于这些定义无法事先确定，因此也只能存在于用户提供的翻译单元中，那么单一定义规则的处理也只能由用户来负责。即由用户负责提供一个翻译单元来存放唯一一次中断函数定义，而其它翻译单元通过Declare头来引用它们。
 
 而从本库往上，调用本库的上层结构是在运行时动态地提供可调用对象，因此不会出现定义冲突，所有调用本库的代码都可以共享所有硬件计时器。如果你是库开发者，建议调用本库实现计时相关功能，而不要直接定义最底层的中断处理函数。
+# `std::move_only_function<void()>`
+`std::move_only_function<void()>`是任意无参无返回可调用对象的类型擦除包装器。本库所有API允许你提供左值引用和右值引用两种调用方式，其区别在于对象生命周期由本库自动管理还是用户管理。如果你不了解这种类型，可以参照以下简单指南，适用于绝大多数情形：
+1. 对于无参的函数指针或λ表达式，直接传入即可。
+2. 如果调用的是对象的`operator()()`：若希望将对象拷贝一份传入（即使该对象若有任何修改皆与原对象无关），或对象是临时生成的（右值），直接传入即可；若希望保留对象所有权供它用，或传入引用以使任何修改都会作用于原对象，则用`std::reference_wrapper`包装后传入；若对象非临时（左值）但传入后即无它用，则用`std::move()`将其转换为右值引用后输入。
+3. 其它情形，使用λ表达式闭包后传入。

@@ -4,6 +4,7 @@
 #endif
 namespace Timers_one_for_all
 {
+	std::move_only_function<void()> const _DoNothing;
 	TimerClass *AllocateTimer()
 	{
 		for (int8_t T = NumTimers - 1; T >= 0; --T)
@@ -700,9 +701,10 @@ namespace Timers_one_for_all
 #define _TOFA_ThisReference(Callback) PublicCache
 #define _TOFA_SingletonCapture(Callback)
 #define _TOFA_SingletonReference(Instance, Callback) Instance.PublicCache
-#define _TOFA_SelfCapture(Callback) ,&Callback = PublicCache
+#define _TOFA_SelfCapture(Callback) , &Callback = PublicCache
+#define _TOFA_Mutable mutable
 #include "_TOFA_RTO_Define.hpp"
-#define _TOFA_Reference const &
+#define _TOFA_Reference &
 #define _TOFA_Capture(Variable) &Variable
 #define _TOFA_DirectHandler &Do
 #define _TOFA_PublicCache(Callback)
@@ -710,6 +712,7 @@ namespace Timers_one_for_all
 #define _TOFA_ThisReference(Callback) Callback
 #define _TOFA_SingletonCapture(Callback) , &Callback
 #define _TOFA_SingletonReference(Instance, Callback) Callback
-#define _TOFA_SelfCapture(Callback) ,&Callback
+#define _TOFA_SelfCapture(Callback) , &Callback
+#define _TOFA_Mutable
 #include "_TOFA_RTO_Define.hpp"
 }

@@ -1,22 +1,22 @@
 #ifdef ARDUINO_ARCH_AVR
 #ifdef TOFA_TIMER0
-void TimerClass0::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void TimerClass0::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	TIMSK0 = 1 << TOIE0;
 	OverflowCountA = _PrescalerOverflow<_Prescaler01>(After.count() >> 8, TCCR0B) + 1;
 	TCCR0A = 0;
-	OCR0A = After.count() >> _Prescaler01::BitShifts[TCCR0B];
-	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]()
+	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]() _TOFA_Mutable
 			   {
 			if (!--HardwareTimer0.OverflowCountA) {
 				TIMSK0 = 1 << TOIE0;
 				Do();
 			} });
+	OCR0A = After.count() >> _Prescaler01::BitShifts[TCCR0B];
 	TCNT0 = 0;
 	TIFR0 = -1;
 	TIMSK0 = (1 << TOIE0) | (1 << OCIE0A);
 }
-void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (RepeatTimes)
 	{
@@ -28,7 +28,7 @@ void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			TCCR0A = 0;
 			OCR0A = OcraTarget;
 			OverflowCountA = ++OverflowTarget;
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer0.OverflowCountA) {
 						if (--HardwareTimer0.RepeatLeft) {
@@ -47,7 +47,7 @@ void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 		{
 			TCCR0A = 1 << WGM01;
 			OCR0A = Every.count() >> _Prescaler01::BitShifts[TCCR0B];
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer0.RepeatLeft)
 						TIMSK0 = 1 << TOIE0;
@@ -64,7 +64,7 @@ void TimerClass0::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 	else
 		DoneCallback();
 }
-void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (NumHalfPeriods)
 	{
@@ -77,7 +77,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			OCR0A = AfterA.count() >> _Prescaler01::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler01::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> _Prescaler01::MaxShift;
-			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer0.OverflowCountA) {
 						if (--HardwareTimer0.RepeatLeft > 1) {
@@ -92,7 +92,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					} });
 			OverflowCountB = OverflowTarget;
 			OCR0B = OcrTarget;
-			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 							if (!--HardwareTimer0.OverflowCountA) {
 								if (--HardwareTimer0.RepeatLeft > 1) {
@@ -112,7 +112,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			TCCR0A = 1 << WGM01;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR0B = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--HardwareTimer0.RepeatLeft < 2)
 						TIMSK0 &= ~(1 << OCIE0B);
@@ -120,7 +120,7 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					if (!HardwareTimer0.RepeatLeft)
 						_TOFA_SingletonReference(HardwareTimer0, DoneCallback)(); });
 			OCR0A = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--HardwareTimer0.RepeatLeft < 2)
 						TIMSK0 &= ~(1 << OCIE0A);
@@ -138,13 +138,13 @@ void TimerClass0::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 }
 #endif
 #if defined TOFA_TIMER1 || defined TOFA_TIMER3 || defined TOFA_TIMER4 || defined TOFA_TIMER5
-void TimerClass1::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void TimerClass1::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	TIMSK = 0;
 	OverflowCountA = _PrescalerOverflow<_Prescaler01>(After.count() >> 16, TCCRB) + 1;
 	TCCRA = 0;
 	OCRA = After.count() >> _Prescaler01::BitShifts[TCCRB];
-	_COMPA = &(HandlerA = [this, _TOFA_Capture(Do)]()
+	_COMPA = &(HandlerA = [this, _TOFA_Capture(Do)]() _TOFA_Mutable
 			   {
 			if (!--OverflowCountA) {
 				TIMSK = 0;
@@ -154,7 +154,7 @@ void TimerClass1::DoAfter(Tick After, std::move_only_function<void() const> _TOF
 	TIFR = -1;
 	TIMSK = 1 << OCIE1A;
 }
-void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (RepeatTimes)
 	{
@@ -165,7 +165,7 @@ void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			const uint16_t OcraTarget = Every.count() >> _Prescaler01::MaxShift;
 			OCRA = OcraTarget;
 			OverflowCountA = ++OverflowTarget;
-			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
+			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]() _TOFA_Mutable
 					   {
 					if (!--OverflowCountA) {
 						if (--RepeatLeft) {
@@ -183,7 +183,7 @@ void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 		else
 		{
 			OCRA = Every.count() >> _Prescaler01::BitShifts[TCCRB];
-			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [this, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--RepeatLeft)
 						TIMSK = 0;
@@ -201,7 +201,7 @@ void TimerClass1::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 	else
 		DoneCallback();
 }
-void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (NumHalfPeriods)
 	{
@@ -214,7 +214,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			OCRA = AfterA.count() >> _Prescaler01::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler01::MaxShift + 16) + 1;
 			const uint16_t OcrTarget = AfterB.count() >> _Prescaler01::MaxShift;
-			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--OverflowCountA) {
 						if (--RepeatLeft > 1) {
@@ -229,7 +229,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					} });
 			OverflowCountB = OverflowTarget;
 			OCRB = OcrTarget;
-			_COMPB = &(HandlerB = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [this, OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 							if (!--OverflowCountA) {
 								if (--RepeatLeft > 1) {
@@ -248,7 +248,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			const uint8_t BitShift = _Prescaler01::BitShifts[TCCRB];
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCRB = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--RepeatLeft < 2)
 						TIMSK &= ~(1 << OCIE1B);
@@ -256,7 +256,7 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					if (!RepeatLeft)
 						_TOFA_ThisReference(DoneCallback)(); });
 			OCRA = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--RepeatLeft < 2)
 						TIMSK &= ~(1 << OCIE1A);
@@ -275,13 +275,13 @@ void TimerClass1::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 }
 #endif
 #ifdef TOFA_TIMER2
-void TimerClass2::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void TimerClass2::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	TIMSK2 = 0;
 	OverflowCountA = _PrescalerOverflow<_Prescaler2>(After.count() >> 8, TCCR2B) + 1;
 	TCCR2A = 0;
 	OCR2A = After.count() >> _Prescaler2::BitShifts[TCCR2B];
-	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]()
+	_COMPA = &(HandlerA = [_TOFA_Capture(Do)]() _TOFA_Mutable
 			   {
 			if (!--HardwareTimer2.OverflowCountA) {
 				TIMSK2 = 0;
@@ -291,7 +291,7 @@ void TimerClass2::DoAfter(Tick After, std::move_only_function<void() const> _TOF
 	TIFR2 = -1;
 	TIMSK2 = 1 << OCIE2A;
 }
-void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (RepeatTimes)
 	{
@@ -302,7 +302,7 @@ void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 			TCCR2A = 0;
 			OCR2A = OcraTarget;
 			OverflowCountA = ++OverflowTarget;
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), OverflowTarget, OcraTarget]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer2.OverflowCountA) {
 						if (--HardwareTimer2.RepeatLeft) {
@@ -321,7 +321,7 @@ void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 		{
 			TCCR2A = 1 << WGM21;
 			OCR2A = Every.count() >> _Prescaler2::BitShifts[TCCR2B];
-			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer2.RepeatLeft)
 						TIMSK2 = 0;
@@ -338,7 +338,7 @@ void TimerClass2::RepeatEvery(Tick Every, std::move_only_function<void() const> 
 	else
 		DoneCallback();
 }
-void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (NumHalfPeriods)
 	{
@@ -351,7 +351,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			OCR2A = AfterA.count() >> _Prescaler2::MaxShift;
 			OverflowCountA = (AfterA.count() >> _Prescaler2::MaxShift + 8) + 1;
 			const uint8_t OcrTarget = AfterB.count() >> _Prescaler2::MaxShift;
-			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [OcrTarget, OverflowTarget, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (!--HardwareTimer2.OverflowCountA) {
 						if (--HardwareTimer2.RepeatLeft > 1) {
@@ -366,7 +366,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					} });
 			OverflowCountB = OverflowTarget;
 			OCR2B = OcrTarget;
-			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [OcrTarget, OverflowTarget, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 							if (!--HardwareTimer2.OverflowCountA) {
 								if (--HardwareTimer2.RepeatLeft > 1) {
@@ -386,7 +386,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 			TCCR2A = 1 << WGM21;
 			// AB置反，因为DoB需要仅适用于A的CTC
 			OCR2B = AfterA.count() >> BitShift;
-			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPB = &(HandlerB = [_TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--HardwareTimer2.RepeatLeft < 2)
 						TIMSK2 &= ~(1 << OCIE2B);
@@ -394,7 +394,7 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 					if (!HardwareTimer2.RepeatLeft)
 						_TOFA_SingletonReference(HardwareTimer2, DoneCallback)(); });
 			OCR2A = AfterB.count() >> BitShift;
-			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+			_COMPA = &(HandlerA = [_TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					   {
 					if (--HardwareTimer2.RepeatLeft < 2)
 						TIMSK2 &= ~(1 << OCIE2A);
@@ -414,13 +414,13 @@ void TimerClass2::DoubleRepeat(Tick AfterA, std::move_only_function<void() const
 #endif
 #ifdef ARDUINO_ARCH_SAM
 #ifdef TOFA_SYSTIMER
-void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	SysTick->CTRL = 0;
 	SysTick->VAL = 0;
 	uint64_t TimeTicks = After.count();
 	uint32_t CTRL = _SysTick_CTRL_MCK;
-	HandlerA = [_TOFA_Capture(Do)]()
+	HandlerA = [_TOFA_Capture(Do)]() _TOFA_Mutable
 	{
 		SysTick->CTRL = 0;
 		Do();
@@ -447,7 +447,7 @@ void SystemTimerClass::DoAfter(Tick After, std::move_only_function<void() const>
 	SysTick->LOAD = TimeTicks;
 	SysTick->CTRL = CTRL;
 }
-void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (RepeatTimes)
 	{
@@ -464,7 +464,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() co
 				const uint32_t LOAD = TimeTicks;
 				OverflowTarget++;
 				OverflowCount = OverflowTarget;
-				_Handler = &(HandlerA = [_TOFA_Capture(Do), OverflowTarget, LOAD, _TOFA_Capture(DoneCallback)]()
+				_Handler = &(HandlerA = [_TOFA_Capture(Do), OverflowTarget, LOAD, _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 							 {
 						switch (--SystemTimer.OverflowCount) {
 						case 0:
@@ -490,7 +490,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() co
 			}
 			CTRL = _SysTick_CTRL_MCK8;
 		}
-		_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+		_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 					 {
 				if (!--SystemTimer.RepeatLeft)
 					SysTick->CTRL = 0;
@@ -503,7 +503,7 @@ void SystemTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() co
 	else
 		DoneCallback();
 }
-void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (NumHalfPeriods)
 	{
@@ -530,7 +530,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 					if (OverflowTargetB)
 					{
 						OverflowTargetB++;
-						HandlerA = [TicksLeftB, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+						HandlerA = [TicksLeftB, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -551,7 +551,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						HandlerB = [TicksLeftA, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+						HandlerB = [TicksLeftA, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -575,7 +575,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 					}
 					else
 					{
-						HandlerA = [TicksLeftB, TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+						HandlerA = [TicksLeftB, TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 						{
 							switch (--SystemTimer.OverflowCount)
 							{
@@ -595,7 +595,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 								SysTick->LOAD = TicksLeftB;
 							}
 						};
-						HandlerB = [OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+						HandlerB = [OverflowTargetA, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 						{
 							if (--SystemTimer.RepeatLeft)
 							{
@@ -613,7 +613,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 				}
 				else
 				{
-					HandlerA = [OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+					HandlerA = [OverflowTargetB, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					{
 						if (--SystemTimer.RepeatLeft)
 						{
@@ -627,7 +627,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 						if (!SystemTimer.RepeatLeft)
 							_TOFA_SingletonReference(SystemTimer, DoneCallback)();
 					};
-					HandlerB = [TicksLeftA, TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+					HandlerB = [TicksLeftA, TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					{
 						switch (--SystemTimer.OverflowCount)
 						{
@@ -660,7 +660,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 		}
 		const uint32_t TicksLeftA = TimeTicksA;
 		const uint32_t TicksLeftB = TimeTicksB;
-		_Handler = &(HandlerA = [TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+		_Handler = &(HandlerA = [TicksLeftA, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					 {
 				if (--SystemTimer.RepeatLeft) {
 					SysTick->LOAD = TicksLeftA;
@@ -671,7 +671,7 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 				DoA();
 				if (!SystemTimer.RepeatLeft)
 					_TOFA_SingletonReference(SystemTimer, DoneCallback)(); });
-		HandlerB = [TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+		HandlerB = [TicksLeftB, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 		{
 			if (--SystemTimer.RepeatLeft)
 			{
@@ -695,10 +695,10 @@ void SystemTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() 
 }
 #endif
 #ifdef TOFA_REALTIMER
-void RealTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void RealTimerClass::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	RTT->RTT_MR = 0;
-	HandlerA = [_TOFA_Capture(Do)]()
+	HandlerA = [_TOFA_Capture(Do)]() _TOFA_Mutable
 	{
 		RealTimer._Handler = nullptr;
 		RTT->RTT_MR = 0;
@@ -733,7 +733,7 @@ void RealTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _
 	}
 	_Handler = &HandlerA;
 }
-void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (RepeatTimes)
 	{
@@ -746,7 +746,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 				const uint32_t RTT_AR = TimerTicks >> 16;
 				RTT->RTT_AR = RTT_AR;
 				OverflowCount = ++OverflowTarget;
-				_Handler = &(HandlerA = [_TOFA_Capture(Do), RTT_AR, OverflowTarget, _TOFA_Capture(DoneCallback)]()
+				_Handler = &(HandlerA = [_TOFA_Capture(Do), RTT_AR, OverflowTarget, _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 							 {
 						if (!--RealTimer.OverflowCount) {
 							if (--RealTimer.RepeatLeft) {
@@ -768,7 +768,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 			{
 				RTT->RTT_AR = -1;
 				RTT->RTT_MR = RTT_MR_ALMIEN | RTT_MR_RTTRST | RTPRES;
-				_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+				_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 							 {
 						if (!--RealTimer.RepeatLeft) {
 							RTT->RTT_MR = 0;
@@ -783,7 +783,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 		{
 			const uint32_t RTT_AR = TimerTicks;
 			RTT->RTT_AR = RTT_AR;
-			_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), RTT_AR]()
+			_Handler = &(HandlerA = [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback), RTT_AR]() _TOFA_Mutable
 						 {
 					if (--RealTimer.RepeatLeft)
 						RTT->RTT_AR += RTT_AR;
@@ -804,7 +804,7 @@ void RealTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() cons
 	else
 		DoneCallback();
 }
-void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	if (NumHalfPeriods)
 	{
@@ -832,7 +832,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 				OverflowCount = OverflowTargetA;
 				const uint16_t OverflowTargetB = (TimerTicksB >> 48) + 1;
 				RTT_AR_B = TimerTicksB >> 16;
-				_Handler = &(HandlerA = [OverflowTargetB, RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+				_Handler = &(HandlerA = [OverflowTargetB, RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 							 {
 						if (!--RealTimer.OverflowCount) {
 							if (--RealTimer.RepeatLeft) {
@@ -848,7 +848,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 							if (!RealTimer.RepeatLeft)
 								_TOFA_SingletonReference(RealTimer, DoneCallback)();
 						} });
-				HandlerB = [OverflowTargetA, RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+				HandlerB = [OverflowTargetA, RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 				{
 					if (!--RealTimer.OverflowCount)
 					{
@@ -882,7 +882,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 			RTT_AR_B = TimerTicksB;
 		}
 		RTT->RTT_AR = RTT_AR_A;
-		_Handler = &(HandlerA = [RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]()
+		_Handler = &(HandlerA = [RTT_AR_B, _TOFA_Capture(DoA) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 					 {
 				if (--RealTimer.RepeatLeft) {
 					RTT->RTT_AR += RTT_AR_B;
@@ -895,7 +895,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 				DoA();
 				if (!RealTimer.RepeatLeft)
 					_TOFA_SingletonReference(RealTimer, DoneCallback)(); });
-		HandlerB = [RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]()
+		HandlerB = [RTT_AR_A, _TOFA_Capture(DoB) _TOFA_SingletonCapture(DoneCallback)]() _TOFA_Mutable
 		{
 			if (--RealTimer.RepeatLeft)
 			{
@@ -917,7 +917,7 @@ void RealTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() co
 		DoneCallback();
 }
 #endif
-void PeripheralTimerClass::DoAfter(Tick After, std::move_only_function<void() const> _TOFA_Reference Do)
+void PeripheralTimerClass::DoAfter(Tick After, std::move_only_function<void()> _TOFA_Reference Do)
 {
 	Channel.TC_IDR = -1;
 	Initialize();
@@ -938,7 +938,7 @@ void PeripheralTimerClass::DoAfter(Tick After, std::move_only_function<void() co
 		if (OverflowCount = SlowTicks >> 32)
 		{
 			Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
-			_Handler = &(HandlerA = [this, _TOFA_Capture(Do)]
+			_Handler = &(HandlerA = [this, _TOFA_Capture(Do)]() _TOFA_Mutable
 						 {
 					// OverflowCount比实际所需次数少一次，正好利用这一点提前启动CPCDIS
 					if (!--OverflowCount) {
@@ -951,7 +951,7 @@ void PeripheralTimerClass::DoAfter(Tick After, std::move_only_function<void() co
 	_Handler = _TOFA_DirectHandler;
 	Channel.TC_IER = TC_IER_CPCS;
 }
-void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void() const> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void()> _TOFA_Reference Do, uint64_t RepeatTimes, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	switch (RepeatTimes)
 	{
@@ -960,7 +960,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 		break;
 	case 1:
 		// 重复1次需要特殊处理，因为会导致CPCDIS不可用
-		DoAfter(Every, [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]()
+		DoAfter(Every, [_TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 				{
 				Do();
 				DoneCallback(); });
@@ -988,7 +988,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 				const uint32_t TC_RC = SlowTicks;
 				Channel.TC_CMR = TC_CMR_TCCLKS_TIMER_CLOCK5 | TC_CMR_WAVSEL_UP | TC_CMR_WAVE;
 				OverflowTarget++;
-				_Handler = &(HandlerA = [this, TC_RC, OverflowTarget, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]
+				_Handler = &(HandlerA = [this, TC_RC, OverflowTarget, _TOFA_Capture(Do), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 							 {
 						if (!--OverflowCount) {
 							if (--RepeatLeft) {
@@ -1014,7 +1014,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 					_Handler = &HandlerB;
 				}
 				_TOFA_ThisReference(Do)(); });
-		HandlerB = [_TOFA_Capture(DoneCallback) _TOFA_SelfCapture(Do)]()
+		HandlerB = [_TOFA_Capture(DoneCallback) _TOFA_SelfCapture(Do)]() _TOFA_Mutable
 		{
 			Do();
 			DoneCallback();
@@ -1022,7 +1022,7 @@ void PeripheralTimerClass::RepeatEvery(Tick Every, std::move_only_function<void(
 		Channel.TC_IER = TC_IER_CPCS;
 	}
 }
-void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void() const> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void() const> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void() const> _TOFA_Reference DoneCallback)
+void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<void()> _TOFA_Reference DoA, Tick AfterB, std::move_only_function<void()> _TOFA_Reference DoB, uint64_t NumHalfPeriods, std::move_only_function<void()> _TOFA_Reference DoneCallback)
 {
 	switch (NumHalfPeriods)
 	{
@@ -1031,7 +1031,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 		break;
 	case 1:
 		// 重复1次需要特殊处理，因为会导致CPCDIS不可用
-		DoAfter(AfterA, [_TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]()
+		DoAfter(AfterA, [_TOFA_Capture(DoA), _TOFA_Capture(DoneCallback)]() _TOFA_Mutable
 				{
 				DoA();
 				DoneCallback(); });
@@ -1067,7 +1067,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 				Channel.TC_RC = TC_RC_A;
 				const uint32_t OverflowTargetB = TimeTicksB >> 32;
 				const uint32_t TC_RC_B = TimeTicksB;
-				_Handler = &(HandlerA = [this, TC_RC_B, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]
+				_Handler = &(HandlerA = [this, TC_RC_B, OverflowTargetB, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 							 {
 						if (!--OverflowCount) {
 							if (--RepeatLeft) {
@@ -1081,7 +1081,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 							if (!RepeatLeft)
 								_TOFA_ThisReference(DoneCallback)();
 						} });
-				HandlerB = [this, TC_RC_A, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]
+				HandlerB = [this, TC_RC_A, OverflowTargetA, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 				{
 					if (!--OverflowCount)
 					{
@@ -1106,7 +1106,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 			Channel.TC_RC = PeriodSlow;
 		}
 		Channel.TC_CMR = TC_CMR_WAVSEL_UP_RC | TC_CMR_WAVE | TCCLKS;
-		_Handler = &(HandlerA = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]()
+		_Handler = &(HandlerA = [this, _TOFA_Capture(DoA) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 					 {
 				if (--RepeatLeft)
 					_Handler = &HandlerB;
@@ -1115,7 +1115,7 @@ void PeripheralTimerClass::DoubleRepeat(Tick AfterA, std::move_only_function<voi
 				DoA();
 				if (!RepeatLeft)
 					_TOFA_ThisReference(DoneCallback)(); });
-		HandlerB = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]()
+		HandlerB = [this, _TOFA_Capture(DoB) _TOFA_ThisCapture(DoneCallback)]() _TOFA_Mutable
 		{
 			if (--RepeatLeft)
 				_Handler = &HandlerA;
