@@ -4,7 +4,7 @@
 #endif
 namespace Timers_one_for_all
 {
-	std::move_only_function<void()> const _DoNothing;
+	std::move_only_function<void()> _DoNothing;
 	TimerClass *AllocateTimer()
 	{
 		for (int8_t T = NumTimers - 1; T >= 0; --T)

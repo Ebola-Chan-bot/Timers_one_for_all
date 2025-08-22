@@ -5,7 +5,7 @@
 #include <Arduino.h>
 namespace Timers_one_for_all
 {
-	extern std::move_only_function<void()> const _DoNothing;
+	extern std::move_only_function<void()> _DoNothing;
 	// 枚举可用的计时器
 	enum class TimerEnum
 	{
