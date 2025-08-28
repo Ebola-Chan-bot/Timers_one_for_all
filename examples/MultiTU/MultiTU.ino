@@ -4,10 +4,17 @@
 #include "Timers_one_for_all.hpp"
 
 using namespace Timers_one_for_all;
+using namespace std::chrono_literals;
 TimerClass *Timer;
+TimerClass *Timer2;
 void setup() {
   Serial.begin(9600);
   (Timer = AllocateTimer())->StartTiming();
+  Timer2 = AllocateTimer();
+  pinMode(6, OUTPUT);
+  Timer2->DoAfter(20s, []() {
+    digitalWrite(6, HIGH);
+  });
 }
 
 //SAM架构的bug，loop函数不能放在其它翻译单元
